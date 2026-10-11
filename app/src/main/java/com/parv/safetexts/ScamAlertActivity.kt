@@ -108,644 +108,100 @@ class ScamAlertActivity : Activity() {
 
     private fun buildCardForType(alertType: String): View {
         return when (alertType) {
-            TYPE_SCAM -> buildScamCard()
-            TYPE_OTP -> buildOtpCard()
-            TYPE_RAT -> buildRatCard()
-            TYPE_DIGITAL_ARREST -> buildDigitalArrestCard()
-            TYPE_SEXTORTION -> buildSextortionCard()
-            TYPE_PRE_INSTALL -> buildPreInstallCard()
-            TYPE_POST_INSTALL -> buildPostInstallCard()
-            TYPE_SCAM_FUNNEL -> buildScamFunnelCard()
-            TYPE_BOOKING -> buildBookingCard()
-            TYPE_HELPLINE -> buildHelplineCard()
-            TYPE_LOAN -> buildLoanCard()
-            TYPE_JOB -> buildJobCard()
-            TYPE_TRADING -> buildTradingCard()
-            TYPE_FAKE_BOOKING -> buildFakeBookingCard()
-            else -> buildScamCard()
-        }
-    }
-
-    private fun buildScamCard(): View {
-        val sender = intent.getStringExtra(EXTRA_SENDER) ?: "Unknown Sender"
-        val content = intent.getStringExtra(EXTRA_CONTENT) ?: ""
-        val appName = intent.getStringExtra(EXTRA_APP_NAME) ?: "SMS"
-        val isApk = intent.getBooleanExtra(EXTRA_IS_APK, false)
-        val isFakeCredit = intent.getBooleanExtra(EXTRA_IS_FAKE_CREDIT, false)
-        val isBrowserSpam = intent.getBooleanExtra(EXTRA_IS_BROWSER_SPAM, false)
-
-        val cardLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FFF0F0"))
-                cornerRadius = 48f
-                setStroke(6, Color.parseColor("#FF5252"))
+            TYPE_SCAM -> {
+                val sender = intent.getStringExtra(EXTRA_SENDER) ?: "Unknown Sender"
+                val content = intent.getStringExtra(EXTRA_CONTENT) ?: ""
+                val appName = intent.getStringExtra(EXTRA_APP_NAME) ?: "SMS"
+                val isApk = intent.getBooleanExtra(EXTRA_IS_APK, false)
+                val isFakeCredit = intent.getBooleanExtra(EXTRA_IS_FAKE_CREDIT, false)
+                val isBrowserSpam = intent.getBooleanExtra(EXTRA_IS_BROWSER_SPAM, false)
+                AlertCardBuilder.buildScamCard(this, sender, content, appName, isApk, isFakeCredit, isBrowserSpam) { finish() }
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = 32f
-            setPadding(56, 56, 56, 56)
-        }
-
-        val titleView = TextView(this).apply {
-            text = if (isBrowserSpam) "⚠️ PHISHING ALERT" else "🚨 SCAM ALERT 🚨"
-            textSize = 24f
-            setTextColor(Color.parseColor("#D32F2F"))
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 16)
-        }
-        cardLayout.addView(titleView)
-
-        val senderView = TextView(this).apply {
-            text = if (isBrowserSpam) {
-                "Phishing notification from $sender. Do not tap that notification."
-            } else {
-                "From: $sender ($appName)"
+            TYPE_OTP -> AlertCardBuilder.buildOtpCard(this) { finish() }
+            TYPE_RAT -> {
+                val isSevere = intent.getBooleanExtra(EXTRA_IS_SEVERE, false)
+                AlertCardBuilder.buildRatCard(this, isSevere) { finish() }
             }
-            textSize = 17f
-            setTextColor(Color.parseColor("#212121"))
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 20)
-        }
-        cardLayout.addView(senderView)
-
-        val warningDesc = TextView(this).apply {
-            text = "A potential scam was intercepted. Do not transfer money, share OTPs, or click any unverified links."
-            textSize = 15f
-            setTextColor(Color.parseColor("#424242"))
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 24)
-        }
-        cardLayout.addView(warningDesc)
-
-        if (isApk) {
-            val apkWarning = TextView(this).apply {
-                text = "⚠️ DO NOT download & open this file! It might hack your phone & bank account."
-                textSize = 16f
-                setTextColor(Color.parseColor("#D32F2F"))
-                setTypeface(null, android.graphics.Typeface.BOLD)
-                gravity = Gravity.CENTER
-                setPadding(0, 0, 0, 24)
+            TYPE_DIGITAL_ARREST -> AlertCardBuilder.buildDigitalArrestCard(this) { finish() }
+            TYPE_SEXTORTION -> AlertCardBuilder.buildSextortionCard(this) { finish() }
+            TYPE_PRE_INSTALL -> {
+                val isSevere = intent.getBooleanExtra(EXTRA_IS_SEVERE, false)
+                AlertCardBuilder.buildPreInstallCard(this, isSevere) { finish() }
             }
-            cardLayout.addView(apkWarning)
-        }
-
-        if (isFakeCredit) {
-            val fakeCredit = TextView(this).apply {
-                text = "⚠️ Fake transaction alert: AMOUNT HAS NOT BEEN CREDITED TO YOUR ACCOUNT!"
-                textSize = 16f
-                setTextColor(Color.parseColor("#D32F2F"))
-                setTypeface(null, android.graphics.Typeface.BOLD)
-                gravity = Gravity.CENTER
-                setPadding(0, 0, 0, 24)
+            TYPE_POST_INSTALL -> {
+                val maliciousPkg = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: "Unknown App"
+                AlertCardBuilder.buildPostInstallCard(this, maliciousPkg) { finish() }
             }
-            cardLayout.addView(fakeCredit)
-        }
-
-        val btnLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(0, 16, 0, 0)
-        }
-
-        val dismissBtn = Button(this).apply {
-            text = "DISMISS"
-            setTextColor(Color.WHITE)
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FF5252"))
-                cornerRadius = 24f
+            TYPE_SCAM_FUNNEL -> {
+                val isDM = intent.getBooleanExtra(EXTRA_IS_DM, false)
+                AlertCardBuilder.buildScamFunnelCard(this, isDM) { finish() }
             }
-            setPadding(32, 20, 32, 20)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            setOnClickListener { finish() }
-        }
-
-        val notScamBtn = Button(this).apply {
-            text = "NOT A SCAM"
-            setTextColor(Color.WHITE)
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#4CAF50"))
-                cornerRadius = 24f
+            TYPE_BOOKING -> AlertCardBuilder.buildSimpleAlertCard(
+                this,
+                title = "✈️ TRAVEL SAFETY ALERT",
+                titleColor = "#1565C0",
+                strokeColor = "#1976D2",
+                bgColor = "#E3F2FD",
+                message = "You are searching for travel bookings (hotels, flights, dhams, buses).\n\nNever pay travel agents or booking services an advance over WhatsApp using QR codes or UPI.\n\nDo bookings only from official & genuine websites.\n\nScammers create fake listings to steal your money.",
+                onDismiss = { finish() }
+            )
+            TYPE_HELPLINE -> AlertCardBuilder.buildSimpleAlertCard(
+                this,
+                title = "📞 CUSTOMER CARE ALERT",
+                titleColor = "#E65100",
+                strokeColor = "#F57C00",
+                bgColor = "#FFF3E0",
+                message = "You are searching for customer care or helplines.\n\nBe very careful of numbers found on Google search results or 3rd party websites.\n\nScammers post fake customer care numbers online to steal your money by asking you to download screen sharing apps or share OTPs.\n\nOnly use contact details found inside the official app.",
+                onDismiss = { finish() }
+            )
+            TYPE_LOAN -> AlertCardBuilder.buildSimpleAlertCard(
+                this,
+                title = "💰 LOAN SAFETY ALERT",
+                titleColor = "#E65100",
+                strokeColor = "#F57C00",
+                bgColor = "#FFF3E0",
+                message = "You are searching for loans online.\n\n⚠️ NEVER download unauthorized loan apps sent via WhatsApp or SMS.\n\n⚠️ NEVER pay an 'advance fee', 'processing fee', or 'GST' to get a loan approved.\n\nScammers use these tricks to steal money and hijack your phone contacts.",
+                onDismiss = { finish() }
+            )
+            TYPE_JOB -> AlertCardBuilder.buildSimpleAlertCard(
+                this,
+                title = "💼 JOB SAFETY ALERT",
+                titleColor = "#1976D2",
+                strokeColor = "#1976D2",
+                bgColor = "#E3F2FD",
+                message = "You are searching for online jobs or tasks.\n\n⚠️ NEVER pay a 'registration fee', 'security deposit', or any sort of fee for a job. If asked for registration money etc, then it's a scam.",
+                onDismiss = { finish() }
+            )
+            TYPE_TRADING -> AlertCardBuilder.buildSimpleAlertCard(
+                this,
+                title = "📈 TRADING SAFETY ALERT",
+                titleColor = "#2E7D32",
+                strokeColor = "#2E7D32",
+                bgColor = "#E8F5E9",
+                message = "You are searching for trading or cryptocurrency.\n\n⚠️ NEVER join 'VIP Trading Groups' on Telegram or WhatsApp for stock tips.\n\n⚠️ Beware of platforms promising guaranteed high returns or risk-free profits. If it sounds too good to be true, it's a scam designed to steal your investments.",
+                onDismiss = { finish() }
+            )
+            TYPE_FAKE_BOOKING -> {
+                val chatTitle = intent.getStringExtra(EXTRA_CHAT_TITLE) ?: "Unknown"
+                AlertCardBuilder.buildSimpleAlertCard(
+                    this,
+                    title = "⚠️ BOOKING SCAM WARNING",
+                    titleColor = "#E65100",
+                    strokeColor = "#F57C00",
+                    bgColor = "#FFF3E0",
+                    message = "You are discussing a booking or service with '$chatTitle' and they have requested payment.\n\nScammers frequently create fake listings and websites to steal advance payments via QR codes.\n\nNEVER scan a QR code for an unverified booking or service.",
+                    onDismiss = { finish() }
+                )
             }
-            setPadding(32, 20, 32, 20)
-            val p = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            p.marginStart = 20
-            layoutParams = p
-            setOnClickListener {
-                CoroutineScope(Dispatchers.IO).launch {
-                    try {
-                        val db = AppDatabase.getDatabase(applicationContext)
-                        val msg = db.messageDao().getMessage(sender, content)
-                        if (msg != null) {
-                            db.messageDao().updateMessage(msg.copy(analysisResult = "FALSE_POSITIVE"))
-                        }
-                    } catch (e: Exception) {
-                        Log.e("ScamAlertActivity", "Failed updating false positive", e)
-                    }
-                }
-                try {
-                    val broadcastIntent = Intent("com.parv.safetexts.NOT_A_SCAM").apply {
-                        putExtra("message", content)
-                        setPackage(packageName)
-                    }
-                    sendBroadcast(broadcastIntent)
-                } catch (e: Exception) {
-                    Log.e("ScamAlertActivity", "Failed sending false positive broadcast", e)
-                }
-                finish()
+            else -> {
+                val sender = intent.getStringExtra(EXTRA_SENDER) ?: "Unknown Sender"
+                val content = intent.getStringExtra(EXTRA_CONTENT) ?: ""
+                val appName = intent.getStringExtra(EXTRA_APP_NAME) ?: "SMS"
+                val isApk = intent.getBooleanExtra(EXTRA_IS_APK, false)
+                val isFakeCredit = intent.getBooleanExtra(EXTRA_IS_FAKE_CREDIT, false)
+                val isBrowserSpam = intent.getBooleanExtra(EXTRA_IS_BROWSER_SPAM, false)
+                AlertCardBuilder.buildScamCard(this, sender, content, appName, isApk, isFakeCredit, isBrowserSpam) { finish() }
             }
         }
-
-        btnLayout.addView(dismissBtn)
-        btnLayout.addView(notScamBtn)
-        cardLayout.addView(btnLayout)
-
-        return cardLayout
-    }
-
-    private fun buildOtpCard(): View {
-        val cardLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FFF8E1"))
-                cornerRadius = 48f
-                setStroke(4, Color.parseColor("#FF8F00"))
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = 32f
-            setPadding(64, 64, 64, 64)
-        }
-
-        val titleView = TextView(this).apply {
-            text = "⚠️ OTP SECURITY ALERT"
-            textSize = 22f
-            setTextColor(Color.parseColor("#E65100"))
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 24)
-        }
-
-        val messageView = TextView(this).apply {
-            text = "You recently received an OTP.\n\nDo NOT share it with anyone on this call or message. Bank officials will NEVER ask for your OTP."
-            textSize = 18f
-            setTextColor(Color.parseColor("#212121"))
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 48)
-        }
-
-        val dismissBtn = Button(this).apply {
-            text = "I UNDERSTAND"
-            setTextColor(Color.WHITE)
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FF8F00"))
-                cornerRadius = 24f
-            }
-            setPadding(32, 24, 32, 24)
-            setOnClickListener { finish() }
-        }
-
-        cardLayout.addView(titleView)
-        cardLayout.addView(messageView)
-        cardLayout.addView(dismissBtn)
-        return cardLayout
-    }
-
-    private fun buildRatCard(): View {
-        val isSevere = intent.getBooleanExtra(EXTRA_IS_SEVERE, false)
-        val cardLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = GradientDrawable().apply {
-                setColor(if (isSevere) Color.parseColor("#FFEBEE") else Color.parseColor("#FFF3E0"))
-                cornerRadius = 48f
-                setStroke(6, if (isSevere) Color.parseColor("#D50000") else Color.parseColor("#E65100"))
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = 40f
-            setPadding(64, 64, 64, 64)
-        }
-
-        val titleView = TextView(this).apply {
-            text = if (isSevere) "🚨 SECURITY ALERT 🚨" else "⚠️ REMOTE ACCESS WARNING"
-            textSize = 24f
-            setTextColor(if (isSevere) Color.parseColor("#B71C1C") else Color.parseColor("#E65100"))
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 32)
-        }
-
-        val messageView = TextView(this).apply {
-            text = if (isSevere)
-                "If the caller has asked you to download this app, it is better not to install it as it might hack your device & bank account.\n\nEven if you are on a call with someone claiming to be a government officer, a bank person, or a loan giver, DO NOT install this app! If they ask you to install it, they are just scammers."
-            else
-                "You just installed a screen-sharing app.\n\nBEWARE: If someone claiming to be a customer service/care agent, a government officer, or a banking/loan person asks you to download this over a call or video call, they might hack your phone & bank account. If they ask you to install it, they are just scammers."
-            textSize = 18f
-            setTextColor(Color.parseColor("#212121"))
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 48)
-        }
-
-        val dismissBtn = Button(this).apply {
-            text = if (isSevere) "I UNDERSTAND THE RISK" else "GOT IT"
-            setTextColor(Color.WHITE)
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            background = GradientDrawable().apply {
-                setColor(if (isSevere) Color.parseColor("#D50000") else Color.parseColor("#E65100"))
-                cornerRadius = 24f
-            }
-            setPadding(32, 24, 32, 24)
-            setOnClickListener { finish() }
-        }
-
-        cardLayout.addView(titleView)
-        cardLayout.addView(messageView)
-        cardLayout.addView(dismissBtn)
-        return cardLayout
-    }
-
-    private fun buildDigitalArrestCard(): View {
-        val cardLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FFEBEE"))
-                cornerRadius = 48f
-                setStroke(8, Color.parseColor("#D50000"))
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = 48f
-            setPadding(64, 80, 64, 80)
-        }
-
-        val titleView = TextView(this).apply {
-            text = "🚨 DIGITAL ARREST\nSCAM WARNING 🚨"
-            textSize = 26f
-            setTextColor(Color.parseColor("#B71C1C"))
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 40)
-        }
-
-        val messageView = TextView(this).apply {
-            text = "You are on a long video call following an unknown call, and just opened a banking app.\n\nPolice/CBI will NEVER arrest you over a video call. This is a scam.\n\nDO NOT TRANSFER MONEY."
-            textSize = 20f
-            setTextColor(Color.parseColor("#212121"))
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 48)
-        }
-
-        val dismissBtn = Button(this).apply {
-            text = "I UNDERSTAND"
-            setTextColor(Color.WHITE)
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#D50000"))
-                cornerRadius = 24f
-            }
-            setPadding(32, 32, 32, 32)
-            setOnClickListener { finish() }
-        }
-
-        cardLayout.addView(titleView)
-        cardLayout.addView(messageView)
-        cardLayout.addView(dismissBtn)
-        return cardLayout
-    }
-
-    private fun buildSextortionCard(): View {
-        val cardLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FFEBEE"))
-                cornerRadius = 48f
-                setStroke(6, Color.parseColor("#D50000"))
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = 40f
-            setPadding(64, 80, 64, 80)
-        }
-
-        val titleView = TextView(this).apply {
-            text = "⚠️ VIDEO CALL ALERT"
-            textSize = 24f
-            setTextColor(Color.parseColor("#B71C1C"))
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 24)
-        }
-
-        val messageView = TextView(this).apply {
-            text = "Scammers use video calls to record your face for blackmail and extortion.\n\nIf you see a naked girl or a police officer on call, IMMEDIATELY cut the call & don't pay anything.\n\nDO NOT SHOW YOUR FACE."
-            textSize = 18f
-            setTextColor(Color.parseColor("#212121"))
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 48)
-        }
-
-        val dismissBtn = Button(this).apply {
-            text = "DISMISS & HANG UP"
-            setTextColor(Color.WHITE)
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#D50000"))
-                cornerRadius = 24f
-            }
-            setPadding(32, 32, 32, 32)
-            setOnClickListener { finish() }
-        }
-
-        cardLayout.addView(titleView)
-        cardLayout.addView(messageView)
-        cardLayout.addView(dismissBtn)
-        return cardLayout
-    }
-
-    private fun buildPreInstallCard(): View {
-        val isSevere = intent.getBooleanExtra(EXTRA_IS_SEVERE, false)
-        val cardLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = GradientDrawable().apply {
-                setColor(if (isSevere) Color.parseColor("#FFEBEE") else Color.parseColor("#FFF3E0"))
-                cornerRadius = 48f
-                setStroke(6, if (isSevere) Color.parseColor("#D50000") else Color.parseColor("#E65100"))
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = 40f
-            setPadding(64, 64, 64, 64)
-        }
-
-        val titleView = TextView(this).apply {
-            text = if (isSevere) "🚨 SECURITY ALERT 🚨" else "⚠️ UNVERIFIED APP WARNING"
-            textSize = 24f
-            setTextColor(if (isSevere) Color.parseColor("#B71C1C") else Color.parseColor("#E65100"))
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 32)
-        }
-
-        val messageView = TextView(this).apply {
-            text = if (isSevere)
-                "If the caller has asked you to download this app, it is better not to install it as it might hack your device & bank account.\n\nEven if you are on a call with someone claiming to be a government officer, a bank person, or a loan giver, DO NOT install this app! If they ask you to install it, they are just scammers."
-            else
-                "You are trying to install an unverified app.\n\nBEWARE: If someone claiming to be a customer service/care agent, a government officer, or a banking/loan person asks you to download this over a call or video call, they might hack your phone & bank account. If they ask you to install it, they are just scammers."
-            textSize = 18f
-            setTextColor(Color.parseColor("#212121"))
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 48)
-        }
-
-        val btnContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(0, 16, 0, 0)
-        }
-
-        val cancelBtn = Button(this).apply {
-            text = "CANCEL INSTALL"
-            setTextColor(Color.WHITE)
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            background = GradientDrawable().apply {
-                setColor(if (isSevere) Color.parseColor("#D50000") else Color.parseColor("#E65100"))
-                cornerRadius = 24f
-            }
-            setPadding(32, 24, 32, 24)
-            val p = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            p.marginEnd = 16
-            layoutParams = p
-            setOnClickListener { finish() }
-        }
-
-        val bypassBtn = Button(this).apply {
-            text = "INSTALL ANYWAY"
-            setTextColor(if (isSevere) Color.parseColor("#D50000") else Color.parseColor("#E65100"))
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            background = GradientDrawable().apply {
-                setColor(Color.TRANSPARENT)
-                setStroke(4, if (isSevere) Color.parseColor("#D50000") else Color.parseColor("#E65100"))
-                cornerRadius = 24f
-            }
-            setPadding(32, 24, 32, 24)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            setOnClickListener {
-                MessageReaderAccessibilityService.allowNextInstallUntilTime = System.currentTimeMillis() + 60_000L
-                finish()
-            }
-        }
-
-        btnContainer.addView(cancelBtn)
-        btnContainer.addView(bypassBtn)
-        cardLayout.addView(titleView)
-        cardLayout.addView(messageView)
-        cardLayout.addView(btnContainer)
-        return cardLayout
-    }
-
-    private fun buildPostInstallCard(): View {
-        val maliciousPkg = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: "Unknown App"
-        val cardLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FFF0F0"))
-                cornerRadius = 48f
-                setStroke(8, Color.parseColor("#B71C1C"))
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = 32f
-            setPadding(64, 64, 64, 64)
-        }
-
-        val titleView = TextView(this).apply {
-            text = "🚨 CRITICAL THREAT INSTALLED"
-            textSize = 24f
-            setTextColor(Color.parseColor("#B71C1C"))
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 16)
-        }
-
-        val messageView = TextView(this).apply {
-            text = "A highly dangerous app was just installed on your phone from an untrusted source ($maliciousPkg).\n\nThis app could be secretly reading your SMS and stealing money from your bank accounts. UNINSTALL IT IMMEDIATELY!"
-            textSize = 18f
-            setTextColor(Color.parseColor("#424242"))
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 32)
-        }
-
-        val dismissBtn = Button(this).apply {
-            text = "I WILL UNINSTALL IT NOW"
-            setTextColor(Color.WHITE)
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#B71C1C"))
-                cornerRadius = 24f
-            }
-            setPadding(32, 24, 32, 24)
-            setOnClickListener { finish() }
-        }
-
-        cardLayout.addView(titleView)
-        cardLayout.addView(messageView)
-        cardLayout.addView(dismissBtn)
-        return cardLayout
-    }
-
-    private fun buildScamFunnelCard(): View {
-        val isDM = intent.getBooleanExtra(EXTRA_IS_DM, false)
-        val cardLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FFF0F0"))
-                cornerRadius = 48f
-                setStroke(8, Color.parseColor("#D32F2F"))
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = 32f
-            setPadding(64, 64, 64, 64)
-        }
-
-        val titleView = TextView(this).apply {
-            text = "⚠️ SCAM FUNNEL DETECTED"
-            textSize = 22f
-            setTextColor(Color.parseColor("#D32F2F"))
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 16)
-        }
-
-        val messageView = TextView(this).apply {
-            text = if (isDM)
-                "Do not interact with this person for trading, forex, money tasks, or betting. It is possibly a scammer designed to steal your funds."
-            else
-                "Do not join groups for trading, forex, money tasks, betting. It is possibly a scam group designed to steal your funds."
-            textSize = 16f
-            setTextColor(Color.parseColor("#424242"))
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 32)
-        }
-
-        val dismissBtn = Button(this).apply {
-            text = "I UNDERSTAND"
-            setTextColor(Color.WHITE)
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#D32F2F"))
-                cornerRadius = 24f
-            }
-            setPadding(32, 24, 32, 24)
-            setOnClickListener { finish() }
-        }
-
-        cardLayout.addView(titleView)
-        cardLayout.addView(messageView)
-        cardLayout.addView(dismissBtn)
-        return cardLayout
-    }
-
-    private fun buildBookingCard(): View {
-        return buildSimpleAlertCard(
-            title = "✈️ TRAVEL SAFETY ALERT",
-            titleColor = "#1565C0",
-            strokeColor = "#1976D2",
-            bgColor = "#E3F2FD",
-            message = "You are searching for travel bookings (hotels, flights, dhams, buses).\n\nNever pay travel agents or booking services an advance over WhatsApp using QR codes or UPI.\n\nDo bookings only from official & genuine websites.\n\nScammers create fake listings to steal your money."
-        )
-    }
-
-    private fun buildHelplineCard(): View {
-        return buildSimpleAlertCard(
-            title = "📞 CUSTOMER CARE ALERT",
-            titleColor = "#E65100",
-            strokeColor = "#F57C00",
-            bgColor = "#FFF3E0",
-            message = "You are searching for customer care or helplines.\n\nBe very careful of numbers found on Google search results or 3rd party websites.\n\nScammers post fake customer care numbers online to steal your money by asking you to download screen sharing apps or share OTPs.\n\nOnly use contact details found inside the official app."
-        )
-    }
-
-    private fun buildLoanCard(): View {
-        return buildSimpleAlertCard(
-            title = "💰 LOAN SAFETY ALERT",
-            titleColor = "#E65100",
-            strokeColor = "#F57C00",
-            bgColor = "#FFF3E0",
-            message = "You are searching for loans online.\n\n⚠️ NEVER download unauthorized loan apps sent via WhatsApp or SMS.\n\n⚠️ NEVER pay an 'advance fee', 'processing fee', or 'GST' to get a loan approved.\n\nScammers use these tricks to steal money and hijack your phone contacts."
-        )
-    }
-
-    private fun buildJobCard(): View {
-        return buildSimpleAlertCard(
-            title = "💼 JOB SAFETY ALERT",
-            titleColor = "#1976D2",
-            strokeColor = "#1976D2",
-            bgColor = "#E3F2FD",
-            message = "You are searching for online jobs or tasks.\n\n⚠️ NEVER pay a 'registration fee', 'security deposit', or any sort of fee for a job. If asked for registration money etc, then it's a scam."
-        )
-    }
-
-    private fun buildTradingCard(): View {
-        return buildSimpleAlertCard(
-            title = "📈 TRADING SAFETY ALERT",
-            titleColor = "#2E7D32",
-            strokeColor = "#2E7D32",
-            bgColor = "#E8F5E9",
-            message = "You are searching for trading or cryptocurrency.\n\n⚠️ NEVER join 'VIP Trading Groups' on Telegram or WhatsApp for stock tips.\n\n⚠️ Beware of platforms promising guaranteed high returns or risk-free profits. If it sounds too good to be true, it's a scam designed to steal your investments."
-        )
-    }
-
-    private fun buildFakeBookingCard(): View {
-        val chatTitle = intent.getStringExtra(EXTRA_CHAT_TITLE) ?: "Unknown"
-        return buildSimpleAlertCard(
-            title = "⚠️ BOOKING SCAM WARNING",
-            titleColor = "#E65100",
-            strokeColor = "#F57C00",
-            bgColor = "#FFF3E0",
-            message = "You are discussing a booking or service with '$chatTitle' and they have requested payment.\n\nScammers frequently create fake listings and websites to steal advance payments via QR codes.\n\nNEVER scan a QR code for an unverified booking or service."
-        )
-    }
-
-    private fun buildSimpleAlertCard(title: String, titleColor: String, strokeColor: String, bgColor: String, message: String): View {
-        val cardLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor(bgColor))
-                cornerRadius = 48f
-                setStroke(4, Color.parseColor(strokeColor))
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = 32f
-            setPadding(64, 64, 64, 64)
-        }
-
-        val titleView = TextView(this).apply {
-            text = title
-            textSize = 22f
-            setTextColor(Color.parseColor(titleColor))
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 24)
-        }
-
-        val messageView = TextView(this).apply {
-            text = message
-            textSize = 18f
-            setTextColor(Color.parseColor("#212121"))
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 48)
-        }
-
-        val dismissBtn = Button(this).apply {
-            text = "I UNDERSTAND"
-            setTextColor(Color.WHITE)
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor(strokeColor))
-                cornerRadius = 24f
-            }
-            setPadding(32, 24, 32, 24)
-            setOnClickListener { finish() }
-        }
-
-        cardLayout.addView(titleView)
-        cardLayout.addView(messageView)
-        cardLayout.addView(dismissBtn)
-        return cardLayout
     }
 }

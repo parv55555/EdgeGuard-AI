@@ -144,65 +144,11 @@ class ScamAnalyzer private constructor(private val context: Context) {
             return
         }
 
-        if (!Settings.canDrawOverlays(context)) {
+        if (Settings.canDrawOverlays(context)) {
+            OverlayUtils.showScamCardOverlay(context, message, isApk, isFakeCredit, isBrowserSpam)
+        } else {
             Log.w("ScamAnalyzer", "Overlay permission not granted. Showing fallback notification.")
             showScamWarningNotification(message)
-            return
-        }
-
-        OverlayUtils.isOverlayShowing = true
-
-        try {
-            val intent = Intent(context, ScamAlertActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                putExtra(ScamAlertActivity.EXTRA_ALERT_TYPE, ScamAlertActivity.TYPE_SCAM)
-                putExtra(ScamAlertActivity.EXTRA_SENDER, message.sender)
-                putExtra(ScamAlertActivity.EXTRA_CONTENT, message.content)
-                putExtra(ScamAlertActivity.EXTRA_APP_NAME, message.appName)
-                putExtra(ScamAlertActivity.EXTRA_IS_APK, isApk)
-                putExtra(ScamAlertActivity.EXTRA_IS_FAKE_CREDIT, isFakeCredit)
-                putExtra(ScamAlertActivity.EXTRA_IS_BROWSER_SPAM, isBrowserSpam)
-                putExtra(ScamAlertActivity.EXTRA_MESSAGE_ID, message.id)
-            }
-
-            val notifId = if (message.id != 0) message.id else Math.abs((message.sender + message.content).hashCode())
-            // Post High-Priority FullScreenIntent Notification
-            val pendingIntent = PendingIntent.getActivity(
-                context,
-                notifId,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                Notification.Builder(context, "SCAM_ALERTS")
-            } else {
-                @Suppress("DEPRECATION")
-                Notification.Builder(context)
-            }
-                .setSmallIcon(android.R.drawable.ic_dialog_alert)
-                .setContentTitle(if (isBrowserSpam) "⚠️ PHISHING ALERT" else "🚨 SCAM ALERT: ${message.sender}")
-                .setContentText("Potential scam message intercepted from ${message.sender}")
-                .setStyle(Notification.BigTextStyle().bigText("SafeConvos intercepted a potential scam from ${message.sender} (${message.appName}). Open SafeConvos to view details."))
-                .setPriority(Notification.PRIORITY_MAX)
-                .setCategory(Notification.CATEGORY_ALARM)
-                .setFullScreenIntent(pendingIntent, true)
-                .setAutoCancel(true)
-                .build()
-            notificationManager.notify(notifId, notification)
-
-            val options = ActivityOptions.makeBasic()
-            if (Build.VERSION.SDK_INT >= 34) {
-                try {
-                    val method = options.javaClass.getMethod("setPendingIntentBackgroundActivityStartMode", Int::class.javaPrimitiveType)
-                    method.invoke(options, 1)
-                } catch (e: Throwable) {}
-            }
-            context.startActivity(intent, options.toBundle())
-        } catch (e: Exception) {
-            Log.e("ScamAnalyzer", "Failed to launch ScamAlertActivity: ${e.message}", e)
-            showScamWarningNotification(message)
-            OverlayUtils.isOverlayShowing = false
         }
     }
 
