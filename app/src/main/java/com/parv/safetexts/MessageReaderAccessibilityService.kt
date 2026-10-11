@@ -357,7 +357,6 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             // Best-effort extraction of the chat title (sender name)
             var chatTitle = extractBestEffortChatTitle(rootNode, packageName)
 
-
             if (chatTitle.isNotEmpty() && isWhatsApp) {
                 // Temporal Linking: Check if there was a Chrome Booking Intent in the last 30 minutes
                 val prefs = getSharedPreferences("safetexts_prefs", android.content.Context.MODE_PRIVATE)
@@ -374,38 +373,14 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                     prefs.edit().remove("booking_intent_timestamp").apply()
                     Log.d("FunnelInterceptor", "Temporal Link: Chat '$chatTitle' tagged as BOOKING_SCAM_RISK")
                 }
-                
-
             }
 
-            // ONLY scan the text if we are actually on a chat screen.
-            // For WhatsApp and Telegram, we strictly require the chat title (contact name header) to be present 
-            // to avoid mistakenly scanning the main chat list (which has a hidden search bar that tricks isChatScreen).
-            val isStrictApp = packageName.contains("whatsapp") || packageName.contains("telegram")
-            val shouldScanText = if (isStrictApp) {
-                chatTitle.isNotEmpty() && !isGroupChat(rootNode, packageName, chatTitle)
-            } else {
-                (chatTitle.isNotEmpty() || isChatScreen(rootNode)) && !isGroupChat(rootNode, packageName, chatTitle)
-            }
-            
-            // Skip official WhatsApp service account, alphanumeric SMS senders, and saved contacts as requested.
-            if (chatTitle.isNotEmpty()) {
-                val isWhatsApp = packageName.contains("whatsapp")
-                val isSms = packageName.contains("messaging") || packageName.contains("sms") || packageName.contains("mms")
-                
-                val isOfficialWhatsApp = isWhatsApp && chatTitle.lowercase() == "whatsapp"
-                val isVerifiedCompany = isWhatsApp && ContactUtils.isWhatsAppCompanyAccount(chatTitle)
-                val isAlphanumericSms = isSms && ContactUtils.isAlphanumericSmsSender(chatTitle)
-                val isSavedContact = ContactUtils.isContactExists(this, chatTitle)
-                
-                if (isOfficialWhatsApp || isVerifiedCompany || isAlphanumericSms || isSavedContact) {
-                    return
-                }
-            }
-            // Check if we are actually on a Profile/Info screen (Contact Info, Group Info)
+            // ONLY scan if we are on a chat screen, not a group or profile screen
+            val isOnChat = isChatScreen(rootNode, packageName) || chatTitle.isNotEmpty()
+            val isGroup = isGroupChat(rootNode, packageName, chatTitle)
             val isProfileScreen = isProfileScreen(rootNode)
             
-            if (shouldScanText && !isProfileScreen) {
+            if (isOnChat && !isGroup && !isProfileScreen) {
                 extractTextFromNode(rootNode, packageName, chatTitle)
             }
         }
@@ -416,38 +391,40 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             val subtitles = rootNode.findAccessibilityNodeInfosByViewId("com.whatsapp:id/conversation_contact_status")
             if (!subtitles.isNullOrEmpty()) {
                 val text = subtitles[0].text?.toString()?.lowercase() ?: ""
-                if (text.contains("group") || text.contains("you") || text.contains(",") || text.contains("announcement") || text.contains("community") || text.contains("channel") || text.contains("members") || text.contains("subscribers") || text.contains("only admin")) {
+                subtitles.forEach { it.recycle() }
+                if (text.startsWith("you, ") || text.startsWith("you and ") || 
+                    text.contains("participants") || text.contains("members") || 
+                    text.contains("group") || text.contains("community") || 
+                    text.contains("channel") || text.contains("announcement") || 
+                    text.contains("only admins can send")) {
                     return true
                 }
-                        }
+            }
             // Check content description of the profile photo
             val photoNodes = rootNode.findAccessibilityNodeInfosByViewId("com.whatsapp:id/conversation_contact_photo")
             if (!photoNodes.isNullOrEmpty()) {
                 val contentDesc = photoNodes[0].contentDescription?.toString()?.lowercase() ?: ""
-                if (contentDesc.contains("group")) {
+                photoNodes.forEach { it.recycle() }
+                if (contentDesc.contains("group") || contentDesc.contains("community")) {
                     return true
                 }
             }
             // Another strong indicator: if we see participant names above messages in the chat
-                        // Check for admin-only group indicator
-            val adminNodes = rootNode.findAccessibilityNodeInfosByText("only admins can send")
-            if (!adminNodes.isNullOrEmpty()) {
-                return true
-            }
             val nameNodes = rootNode.findAccessibilityNodeInfosByViewId("com.whatsapp:id/name_in_message_color")
             if (!nameNodes.isNullOrEmpty()) {
+                nameNodes.forEach { it.recycle() }
                 return true
             }
         } else if (packageName.contains("telegram")) {
             val subtitles = rootNode.findAccessibilityNodeInfosByViewId("org.telegram.messenger:id/action_bar_subtitle")
             if (!subtitles.isNullOrEmpty()) {
                 val text = subtitles[0].text?.toString()?.lowercase() ?: ""
+                subtitles.forEach { it.recycle() }
                 if (text.contains("members") || text.contains("subscribers")) {
                     return true
                 }
             }
         } else if (packageName.contains("messaging") || packageName.contains("sms") || packageName.contains("mms")) {
-            // In SMS apps, group chats typically list multiple names or numbers separated by commas in the title
             if (chatTitle.contains(",")) {
                 return true
             }
@@ -455,12 +432,34 @@ class MessageReaderAccessibilityService : AccessibilityService() {
         return false
     }
 
-    private fun isChatScreen(node: AccessibilityNodeInfo): Boolean {
+    private fun isChatScreen(node: AccessibilityNodeInfo, packageName: String = ""): Boolean {
+        if (packageName.contains("whatsapp")) {
+            val entryNodes = node.findAccessibilityNodeInfosByViewId("$packageName:id/entry")
+            if (!entryNodes.isNullOrEmpty()) {
+                entryNodes.forEach { it.recycle() }
+                return true
+            }
+            val voiceNodes = node.findAccessibilityNodeInfosByViewId("$packageName:id/voice_note_btn")
+            if (!voiceNodes.isNullOrEmpty()) {
+                voiceNodes.forEach { it.recycle() }
+                return true
+            }
+            val sendNodes = node.findAccessibilityNodeInfosByViewId("$packageName:id/send")
+            if (!sendNodes.isNullOrEmpty()) {
+                sendNodes.forEach { it.recycle() }
+                return true
+            }
+        }
+        return hasEditableNode(node, 0)
+    }
+
+    private fun hasEditableNode(node: AccessibilityNodeInfo, depth: Int): Boolean {
+        if (depth > 6) return false
         if (node.isEditable) return true
         for (i in 0 until node.childCount) {
             val child = node.getChild(i)
             if (child != null) {
-                if (isChatScreen(child)) {
+                if (hasEditableNode(child, depth + 1)) {
                     child.recycle()
                     return true
                 }
@@ -499,18 +498,28 @@ class MessageReaderAccessibilityService : AccessibilityService() {
 
     private data class NodeScanContext(
         val isInsideQuote: Boolean,
-        val isInsideList: Boolean,
         val isSent: Boolean
     )
 
     private fun inspectNodeContext(node: AccessibilityNodeInfo, screenWidth: Int, isWhatsApp: Boolean): NodeScanContext {
         var isQuote = false
-        var isList = false
         var isSent = false
         var current: AccessibilityNodeInfo? = node
         var count = 0
 
-        while (current != null && count < 6) {
+        val nodeBounds = android.graphics.Rect()
+        node.getBoundsInScreen(nodeBounds)
+
+        // Ultra-fast geometry sent detection: In WhatsApp & SMS, user's sent messages are right-aligned
+        if (screenWidth > 0 && nodeBounds.width() > 0) {
+            val distanceToLeft = nodeBounds.left
+            val distanceToRight = screenWidth - nodeBounds.right
+            if (distanceToRight < distanceToLeft - (screenWidth * 0.05f) && distanceToRight <= (screenWidth * 0.30f)) {
+                isSent = true
+            }
+        }
+
+        while (current != null && count < 10) {
             val viewId = current.viewIdResourceName?.lowercase() ?: ""
             if (viewId.contains("quote") || viewId.contains("reply")) {
                 isQuote = true
@@ -523,40 +532,14 @@ class MessageReaderAccessibilityService : AccessibilityService() {
 
             val className = current.className?.toString() ?: ""
             if (className.contains("RecyclerView") || className.contains("ListView") || className.contains("ScrollView")) {
-                isList = true
-                break // Reached top-level message list container! Stop ascending immediately!
-            }
-
-            if (isWhatsApp && !isSent && count <= 2) {
-                // Check status icons only at immediate message bubble level (avoid sub-tree searches at every ancestor)
-                val status1 = current.findAccessibilityNodeInfosByViewId("com.whatsapp:id/status")
-                if (!status1.isNullOrEmpty()) {
-                    isSent = true
-                    status1.forEach { it.recycle() }
-                } else {
-                    val status2 = current.findAccessibilityNodeInfosByViewId("com.whatsapp:id/message_status_indicator")
-                    if (!status2.isNullOrEmpty()) {
-                        isSent = true
-                        status2.forEach { it.recycle() }
-                    }
-                }
-            } else if (!isWhatsApp && !isSent) {
-                val bounds = android.graphics.Rect()
-                current.getBoundsInScreen(bounds)
-                if (bounds.width() > 0 && bounds.height() > 0 && bounds.width() < screenWidth * 0.99f) {
-                    val distanceToLeftEdge = bounds.left
-                    val distanceToRightEdge = screenWidth - bounds.right
-                    if (distanceToRightEdge < distanceToLeftEdge - (screenWidth * 0.02f) && distanceToRightEdge <= (screenWidth * 0.25f)) {
-                        isSent = true
-                    }
-                }
+                break
             }
 
             current = current.parent
             count++
         }
 
-        return NodeScanContext(isInsideQuote = isQuote, isInsideList = isList, isSent = isSent)
+        return NodeScanContext(isInsideQuote = isQuote, isSent = isSent)
     }
 
     private fun extractTextFromNode(node: AccessibilityNodeInfo, packageName: String, chatTitle: String) {
@@ -607,14 +590,9 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 val isCenterAligned = Math.abs(nodeCenter - screenCenter) < (screenWidth * 0.05f) && bounds.width() < (screenWidth * 0.5f)
 
                 if (!isKnownBadId && !isCenterAligned) {
-                    val isKnownMessageId = viewId.endsWith("message_text") || 
-                                           viewId.endsWith("chat_message_text") || 
-                                           viewId.endsWith("text_message")
-                    
                     val contextInfo = inspectNodeContext(node, screenWidth, packageName.contains("whatsapp"))
-                    val isValidMessage = !contextInfo.isInsideQuote && (isKnownMessageId || contextInfo.isInsideList)
 
-                    if (isValidMessage && !contextInfo.isSent) {
+                    if (!contextInfo.isInsideQuote && !contextInfo.isSent) {
                         if (chatTitle.isEmpty() || text.trim() != chatTitle.trim()) {
                             val finalSender = if (chatTitle.isNotEmpty()) chatTitle else "Screen Reader"
                             val isApk = lowerText.contains(".apk")
@@ -961,25 +939,23 @@ class MessageReaderAccessibilityService : AccessibilityService() {
     }
 
     private fun extractBestEffortChatTitle(rootNode: AccessibilityNodeInfo, packageName: String): String {
-        if (packageName.contains("whatsapp")) {
-            val nodes = rootNode.findAccessibilityNodeInfosByViewId("com.whatsapp:id/conversation_contact_name")
+        val candidateIds = listOf(
+            "$packageName:id/conversation_contact_name",
+            "com.whatsapp:id/conversation_contact_name",
+            "com.whatsapp.w4b:id/conversation_contact_name",
+            "$packageName:id/chat_name",
+            "$packageName:id/contact_name",
+            "$packageName:id/action_bar_title",
+            "$packageName:id/conversation_title",
+            "$packageName:id/title"
+        )
+        for (id in candidateIds) {
+            val nodes = rootNode.findAccessibilityNodeInfosByViewId(id)
             if (!nodes.isNullOrEmpty()) {
-                return nodes[0].text?.toString() ?: ""
+                val title = nodes[0].text?.toString()?.trim() ?: ""
+                nodes.forEach { it.recycle() }
+                if (title.isNotEmpty()) return title
             }
-        }
-        
-        // Try common action bar title IDs for Telegram and SMS apps
-        var titleNodes = rootNode.findAccessibilityNodeInfosByViewId("$packageName:id/action_bar_title")
-        if (!titleNodes.isNullOrEmpty()) {
-            return titleNodes[0].text?.toString() ?: ""
-        }
-        titleNodes = rootNode.findAccessibilityNodeInfosByViewId("$packageName:id/conversation_title")
-        if (!titleNodes.isNullOrEmpty()) {
-            return titleNodes[0].text?.toString() ?: ""
-        }
-        titleNodes = rootNode.findAccessibilityNodeInfosByViewId("$packageName:id/title")
-        if (!titleNodes.isNullOrEmpty()) {
-            return titleNodes[0].text?.toString() ?: ""
         }
 
         if (packageName.contains("telegram")) {

@@ -493,7 +493,12 @@ fun HomeScreen(navController: NavController) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (isAllGranted && messages.isNotEmpty()) {
                             val scope = rememberCoroutineScope()
-                            IconButton(onClick = { scope.launch { db.messageDao().deleteAll() } }) {
+                            IconButton(onClick = {
+                                scope.launch {
+                                    db.messageDao().deleteAll()
+                                    ScamAnalyzer.getInstance(context).clearCache()
+                                }
+                            }) {
                                 Icon(Icons.Default.Delete, contentDescription = "Delete All")
                             }
                         }
@@ -627,7 +632,10 @@ fun HomeScreen(navController: NavController) {
                             MessageCard(
                                 message = message,
                                 onDelete = {
-                                    scope.launch { db.messageDao().deleteMessage(message) }
+                                    scope.launch {
+                                        db.messageDao().deleteMessage(message)
+                                        ScamAnalyzer.getInstance(context).removeMessageFromCache(message.sender, message.content)
+                                    }
                                 }
                             )
                         }

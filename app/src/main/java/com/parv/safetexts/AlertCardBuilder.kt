@@ -135,6 +135,7 @@ object AlertCardBuilder {
                         if (msg != null) {
                             db.messageDao().updateMessage(msg.copy(analysisResult = "FALSE_POSITIVE"))
                         }
+                        ScamAnalyzer.getInstance(context).markAsFalsePositive(sender, content)
                     } catch (e: Exception) {
                         Log.e("AlertCardBuilder", "Failed updating false positive", e)
                     }
