@@ -1,0 +1,6 @@
+<!-- programmed by parv -->
+<resources>
+    <string name="app_name">EdgeGuard AI</string>
+    <string name="accessibility_service_description">Reads screen content to protect you from scams.</string>
+</resources>
+
