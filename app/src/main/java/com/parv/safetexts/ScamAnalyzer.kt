@@ -18,7 +18,9 @@ import kotlinx.coroutines.withContext
 class ScamAnalyzer private constructor(private val context: Context) {
     private val database = AppDatabase.getDatabase(context)
     private val scope = CoroutineScope(Dispatchers.IO)
-    private val recentlySeenMessages = java.util.concurrent.ConcurrentHashMap<Int, Long>()
+    private val knownSafeMessages = java.util.concurrent.ConcurrentHashMap<Int, Long>()
+    private val recentlyAlertedScams = java.util.concurrent.ConcurrentHashMap<Int, Long>()
+    private val inProgressHashes = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
     private val tfliteClassifier = TFLiteScamClassifier(context)
 
     init {
@@ -28,6 +30,7 @@ class ScamAnalyzer private constructor(private val context: Context) {
     companion object {
         @Volatile
         private var instance: ScamAnalyzer? = null
+        private val WHITESPACE_REGEX = Regex("\\s+")
 
         fun getInstance(context: Context): ScamAnalyzer {
             return instance ?: synchronized(this) {
@@ -52,73 +55,86 @@ class ScamAnalyzer private constructor(private val context: Context) {
     fun analyzeMessage(message: MessageEntity, onDuplicateScam: ((MessageEntity) -> Unit)? = null, isApk: Boolean = false, isFakeCredit: Boolean = false) {
         val msgHash = (message.sender + message.content).hashCode()
         val currentTime = System.currentTimeMillis()
-        val lastSeen = recentlySeenMessages[msgHash]
-        
-        // Debounce: If we have seen this exact message within the last 10 seconds, ignore the event.
-        if (lastSeen != null && (currentTime - lastSeen) < 10000) {
+
+        // 1. Instant Drop: If already known safe, return in 0ms!
+        if (knownSafeMessages.containsKey(msgHash)) {
             return
         }
-        recentlySeenMessages[msgHash] = currentTime
-        
-        // Cleanup old hashes to prevent memory leaks
-        if (recentlySeenMessages.size > 100) {
-            recentlySeenMessages.entries.removeIf { (currentTime - it.value) > 60000 }
+
+        // 2. Prevent duplicate alerts within 60s for the same scam message
+        val lastAlert = recentlyAlertedScams[msgHash]
+        if (lastAlert != null && (currentTime - lastAlert) < 60000) {
+            return
         }
 
-        scope.launch {
-            // De-duplication check for persistent storage
-            val existingMessage = database.messageDao().getMessage(message.sender, message.content)
-            if (existingMessage != null) {
-                Log.d("ScamAnalyzer", "Duplicate message found: ${message.sender} - ${message.content}")
-                if (existingMessage.analysisResult == "Scam" || existingMessage.analysisResult == "Alert") {
+        // 3. Prevent duplicate concurrent processing of the exact same message
+        if (!inProgressHashes.add(msgHash)) {
+            return
+        }
+
+        scope.launch(Dispatchers.Default) {
+            try {
+                if (isApk || isFakeCredit) {
+                    recentlyAlertedScams[msgHash] = currentTime
+                    val scamMessage = message.copy(
+                        analysisResult = "Alert",
+                        scamProbability = 1.0f
+                    )
+                    // Trigger alert IMMEDIATELY on Main thread
                     withContext(Dispatchers.Main) {
-                        onDuplicateScam?.invoke(existingMessage)
+                        showScamWarningOverlay(scamMessage, isApk = isApk, isFakeCredit = isFakeCredit)
+                    }
+                    // Persist to DB asynchronously
+                    withContext(Dispatchers.IO) {
+                        val existing = database.messageDao().getMessage(message.sender, message.content)
+                        if (existing == null) {
+                            database.messageDao().insertMessage(scamMessage)
+                        }
+                    }
+                    return@launch
+                }
+
+                // Run fast on-device TFLite inference FIRST (on Dispatchers.Default CPU thread pool)
+                val cleanText = message.content.replace("\n", " ").replace(WHITESPACE_REGEX, " ").trim()
+                val (result, scamProbability) = tfliteClassifier.classify(cleanText)
+
+                val isScam = result == "Alert" || result == "Scam"
+                if (isScam) {
+                    recentlyAlertedScams[msgHash] = System.currentTimeMillis()
+                    val alertMessage = message.copy(
+                        analysisResult = result,
+                        scamProbability = scamProbability
+                    )
+                    // Trigger alert IMMEDIATELY on Main thread without waiting for SQLite disk writes!
+                    withContext(Dispatchers.Main) {
+                        showScamWarningOverlay(alertMessage)
+                    }
+                } else {
+                    knownSafeMessages[msgHash] = System.currentTimeMillis()
+                    // Bound the cache size to avoid memory growth
+                    if (knownSafeMessages.size > 1500) {
+                        val threshold = System.currentTimeMillis() - 3600000L
+                        knownSafeMessages.entries.removeIf { it.value < threshold }
                     }
                 }
-                return@launch
-            }
 
-            if (isApk || isFakeCredit) {
-                val scamMessage = message.copy(
-                    analysisResult = "Alert",
-                    scamProbability = 1.0f
-                )
-                val id = database.messageDao().insertMessage(scamMessage)
-                withContext(Dispatchers.Main) {
-                    showScamWarningOverlay(scamMessage.copy(id = id.toInt()), isApk = isApk, isFakeCredit = isFakeCredit)
+                // Record into Room database asynchronously on Dispatchers.IO (non-blocking)
+                withContext(Dispatchers.IO) {
+                    val existing = database.messageDao().getMessage(message.sender, message.content)
+                    if (existing == null) {
+                        val entity = message.copy(analysisResult = result, scamProbability = scamProbability)
+                        database.messageDao().insertMessage(entity)
+                    } else if (isScam && existing.analysisResult != "Alert" && existing.analysisResult != "Scam") {
+                        database.messageDao().updateMessage(existing.copy(analysisResult = result, scamProbability = scamProbability))
+                    }
                 }
-                return@launch
+
+                Log.d("ScamAnalyzer", "TFLite Result for '${message.content.take(20)}...': $result ($scamProbability)")
+            } catch (e: Throwable) {
+                Log.e("ScamAnalyzer", "Classification failed: ${e.message}", e)
+            } finally {
+                inProgressHashes.remove(msgHash)
             }
-
-            val id = database.messageDao().insertMessage(message)
-            analyzeKeywords(message.copy(id = id.toInt()))
-        }
-    }
-
-    private suspend fun analyzeKeywords(message: MessageEntity) {
-        try {
-            val cleanText = message.content.replace("\n", " ").replace(Regex("\\s+"), " ")
-            
-            // Run TFLite inference
-            val (result, scamProbability) = tfliteClassifier.classify(cleanText)
-
-            val analyzedMessage = message.copy(
-                analysisResult = result,
-                scamProbability = scamProbability
-            )
-            database.messageDao().updateMessage(analyzedMessage)
-            
-            if (result == "Alert" || result == "Scam") {
-                withContext(Dispatchers.Main) {
-                    showScamWarningOverlay(analyzedMessage)
-                }
-            }
-            
-            Log.d("ScamAnalyzer", "TFLite Result for '${message.content}': $result ($scamProbability)")
-        } catch (e: Throwable) {
-            Log.e("ScamAnalyzer", "TFLite Inference failed: ${e.message}")
-            val errorMsg = e.message?.take(30) ?: e.javaClass.simpleName
-            database.messageDao().updateMessage(message.copy(analysisResult = "Failed: $errorMsg"))
         }
     }
 
@@ -149,10 +165,11 @@ class ScamAnalyzer private constructor(private val context: Context) {
                 putExtra(ScamAlertActivity.EXTRA_MESSAGE_ID, message.id)
             }
 
+            val notifId = if (message.id != 0) message.id else Math.abs((message.sender + message.content).hashCode())
             // Post High-Priority FullScreenIntent Notification
             val pendingIntent = PendingIntent.getActivity(
                 context,
-                message.id,
+                notifId,
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
@@ -172,7 +189,7 @@ class ScamAnalyzer private constructor(private val context: Context) {
                 .setFullScreenIntent(pendingIntent, true)
                 .setAutoCancel(true)
                 .build()
-            notificationManager.notify(message.id, notification)
+            notificationManager.notify(notifId, notification)
 
             val options = ActivityOptions.makeBasic()
             if (Build.VERSION.SDK_INT >= 34) {

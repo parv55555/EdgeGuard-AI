@@ -15,6 +15,21 @@ class TFLiteScamClassifier(private val context: Context) {
     private var interpreter: Interpreter? = null
     private val vocab = mutableMapOf<String, Int>()
     private val maxLen = 64
+    private var clsTokenId = 101
+    private var sepTokenId = 102
+    private var unkTokenId = 100
+
+    // Reusable buffers to avoid native heap churn and GC pauses
+    private val inputIds = ByteBuffer.allocateDirect(maxLen * 4).order(ByteOrder.nativeOrder())
+    private val attentionMask = ByteBuffer.allocateDirect(maxLen * 4).order(ByteOrder.nativeOrder())
+    private val output = ByteBuffer.allocateDirect(2 * 4).order(ByteOrder.nativeOrder())
+    private val outputs = mutableMapOf<Int, Any>(0 to output)
+    private val inputs = arrayOf<Any>(attentionMask, inputIds)
+
+    companion object {
+        private val PUNCT_REGEX = Regex("([^a-z0-9])")
+        private val WHITESPACE_REGEX = Regex("\\s+")
+    }
 
     init {
         loadVocab()
@@ -34,6 +49,9 @@ class TFLiteScamClassifier(private val context: Context) {
                 index++
             }
             reader.close()
+            clsTokenId = vocab["[CLS]"] ?: 101
+            sepTokenId = vocab["[SEP]"] ?: 102
+            unkTokenId = vocab["[UNK]"] ?: 100
             Log.d("TFLiteScamClassifier", "Loaded ${vocab.size} tokens")
         } catch (e: Exception) {
             Log.e("TFLiteScamClassifier", "Error loading vocab: ${e.message}")
@@ -49,31 +67,36 @@ class TFLiteScamClassifier(private val context: Context) {
             val declaredLength = fileDescriptor.declaredLength
             val buffer: MappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
             
-            val options = Interpreter.Options()
+            val numCores = Runtime.getRuntime().availableProcessors().coerceIn(2, 4)
+            val options = Interpreter.Options().apply {
+                setNumThreads(numCores)
+            }
             interpreter = Interpreter(buffer, options)
-            Log.d("TFLiteScamClassifier", "Model loaded successfully")
+            Log.d("TFLiteScamClassifier", "Model loaded successfully with $numCores threads")
         } catch (e: Exception) {
             Log.e("TFLiteScamClassifier", "Error loading model: ${e.message}")
         }
     }
 
     private fun tokenize(text: String): List<Int> {
-        val tokens = mutableListOf<Int>()
-        tokens.add(vocab["[CLS]"] ?: 101)
+        val tokens = ArrayList<Int>(maxLen)
+        tokens.add(clsTokenId)
         
-        val cleanText = text.lowercase().replace(Regex("([^a-z0-9])"), " $1 ")
-        val words = cleanText.split("\\s+".toRegex()).filter { it.isNotEmpty() }
+        val cleanText = PUNCT_REGEX.replace(text.lowercase(), " $1 ")
+        val words = cleanText.split(WHITESPACE_REGEX)
         
         for (word in words) {
+            if (word.isEmpty()) continue
+            if (tokens.size >= maxLen - 1) break
+
             var start = 0
             var isBad = false
-            val subTokens = mutableListOf<Int>()
+            val subTokens = ArrayList<Int>(8)
             while (start < word.length) {
                 var end = word.length
-                var subword = ""
                 var match: Int? = null
                 while (start < end) {
-                    subword = if (start == 0) word.substring(start, end) else "##" + word.substring(start, end)
+                    val subword = if (start == 0) word.substring(start, end) else "##" + word.substring(start, end)
                     match = vocab[subword]
                     if (match != null) break
                     end--
@@ -86,12 +109,12 @@ class TFLiteScamClassifier(private val context: Context) {
                 start = end
             }
             if (isBad) {
-                tokens.add(vocab["[UNK]"] ?: 100)
+                tokens.add(unkTokenId)
             } else {
                 tokens.addAll(subTokens)
             }
         }
-        tokens.add(vocab["[SEP]"] ?: 102)
+        tokens.add(sepTokenId)
         return tokens
     }
 
@@ -101,8 +124,9 @@ class TFLiteScamClassifier(private val context: Context) {
 
         val tokenIds = tokenize(text)
         
-        val inputIds = ByteBuffer.allocateDirect(maxLen * 4).order(ByteOrder.nativeOrder())
-        val attentionMask = ByteBuffer.allocateDirect(maxLen * 4).order(ByteOrder.nativeOrder())
+        inputIds.clear()
+        attentionMask.clear()
+        output.clear()
         
         for (i in 0 until maxLen) {
             val token = if (i < tokenIds.size) tokenIds[i] else 0
@@ -114,12 +138,6 @@ class TFLiteScamClassifier(private val context: Context) {
         inputIds.rewind()
         attentionMask.rewind()
 
-        val inputs = arrayOf<Any>(attentionMask, inputIds)
-        
-        val output = ByteBuffer.allocateDirect(2 * 4).order(ByteOrder.nativeOrder())
-        val outputs = mutableMapOf<Int, Any>()
-        outputs[0] = output
-        
         try {
             interpreter?.runForMultipleInputsOutputs(inputs, outputs)
             output.rewind()
@@ -131,7 +149,7 @@ class TFLiteScamClassifier(private val context: Context) {
             }
             return Pair("Safe", scamProb)
         } catch (e: Exception) {
-            Log.e("TFLiteScamClassifier", "Inference error: ")
+            Log.e("TFLiteScamClassifier", "Inference error: ${e.message}")
             return Pair("Err: " + e.message?.take(10), 0.0f)
         }
     }

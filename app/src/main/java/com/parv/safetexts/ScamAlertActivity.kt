@@ -245,6 +245,15 @@ class ScamAlertActivity : Activity() {
                         Log.e("ScamAlertActivity", "Failed updating false positive", e)
                     }
                 }
+                try {
+                    val broadcastIntent = Intent("com.parv.safetexts.NOT_A_SCAM").apply {
+                        putExtra("message", content)
+                        setPackage(packageName)
+                    }
+                    sendBroadcast(broadcastIntent)
+                } catch (e: Exception) {
+                    Log.e("ScamAlertActivity", "Failed sending false positive broadcast", e)
+                }
                 finish()
             }
         }

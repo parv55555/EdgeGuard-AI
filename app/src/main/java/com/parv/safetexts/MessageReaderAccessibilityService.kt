@@ -24,6 +24,21 @@ class MessageReaderAccessibilityService : AccessibilityService() {
 
     companion object {
         var allowNextInstallUntilTime: Long = 0L
+        private val BIDI_REGEX = Regex("[\\u200E\\u200F\\u202A-\\u202E]")
+        private val TIME_REGEX_1 = Regex("^\\d{1,2}:\\d{2}\\s*(AM|PM|am|pm)?$")
+        private val TIME_REGEX_2 = Regex("^(Yesterday|Today|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)$", RegexOption.IGNORE_CASE)
+        private val TIME_REGEX_3 = Regex("^\\d{1,2}/\\d{1,2}/\\d{2,4}$")
+        private val TIME_REGEX_4 = Regex("^\\d{1,2}\\s+[A-Za-z]+\\s+\\d{4}$")
+        private val TIME_REGEX_5 = Regex("^[A-Za-z]+\\s+\\d{1,2},?\\s+\\d{4}$")
+        private val IGNORED_EXACT_WORDS = setOf(
+            "message", "forwarded", "forwarded many times",
+            "document", "camera", "gallery", "audio", "location", "contact", "poll",
+            "recent", "images", "image", "photo", "photos", "video", "videos", "files",
+            "gif", "stickers", "avatar", "payment", "catalogue", "reply", "copy", "delete",
+            "share", "info", "report", "block", "cancel", "ok", "yes", "no", "done", "send",
+            "attach", "attachment", "recent files", "all files", "downloads", "documents",
+            "large files", "oldest", "newest", "sort by", "view", "edit", "select", "albums", "add"
+        )
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -360,14 +375,6 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                     Log.d("FunnelInterceptor", "Temporal Link: Chat '$chatTitle' tagged as BOOKING_SCAM_RISK")
                 }
                 
-                // OR if the chat explicitly contains booking keywords, log it to RoomDB
-                if (checkForBookingIntent(rootNode)) {
-                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                        val dao = AppDatabase.getDatabase(this@MessageReaderAccessibilityService).chatContextDao()
-                        dao.insertOrUpdate(ChatContextEntity(chatTitle, "BOOKING_SCAM_RISK", currentTime))
-                    }
-                }
-                
 
             }
 
@@ -490,38 +497,84 @@ class MessageReaderAccessibilityService : AccessibilityService() {
         return false
     }
 
+    private data class NodeScanContext(
+        val isInsideQuote: Boolean,
+        val isInsideList: Boolean,
+        val isSent: Boolean
+    )
+
+    private fun inspectNodeContext(node: AccessibilityNodeInfo, screenWidth: Int, isWhatsApp: Boolean): NodeScanContext {
+        var isQuote = false
+        var isList = false
+        var isSent = false
+        var current: AccessibilityNodeInfo? = node
+        var count = 0
+
+        while (current != null && count < 6) {
+            val viewId = current.viewIdResourceName?.lowercase() ?: ""
+            if (viewId.contains("quote") || viewId.contains("reply")) {
+                isQuote = true
+            }
+
+            val contentDesc = current.contentDescription?.toString()?.lowercase() ?: ""
+            if (contentDesc.startsWith("you:") || contentDesc.contains("you: ")) {
+                isSent = true
+            }
+
+            val className = current.className?.toString() ?: ""
+            if (className.contains("RecyclerView") || className.contains("ListView") || className.contains("ScrollView")) {
+                isList = true
+                break // Reached top-level message list container! Stop ascending immediately!
+            }
+
+            if (isWhatsApp && !isSent && count <= 2) {
+                // Check status icons only at immediate message bubble level (avoid sub-tree searches at every ancestor)
+                val status1 = current.findAccessibilityNodeInfosByViewId("com.whatsapp:id/status")
+                if (!status1.isNullOrEmpty()) {
+                    isSent = true
+                    status1.forEach { it.recycle() }
+                } else {
+                    val status2 = current.findAccessibilityNodeInfosByViewId("com.whatsapp:id/message_status_indicator")
+                    if (!status2.isNullOrEmpty()) {
+                        isSent = true
+                        status2.forEach { it.recycle() }
+                    }
+                }
+            } else if (!isWhatsApp && !isSent) {
+                val bounds = android.graphics.Rect()
+                current.getBoundsInScreen(bounds)
+                if (bounds.width() > 0 && bounds.height() > 0 && bounds.width() < screenWidth * 0.99f) {
+                    val distanceToLeftEdge = bounds.left
+                    val distanceToRightEdge = screenWidth - bounds.right
+                    if (distanceToRightEdge < distanceToLeftEdge - (screenWidth * 0.02f) && distanceToRightEdge <= (screenWidth * 0.25f)) {
+                        isSent = true
+                    }
+                }
+            }
+
+            current = current.parent
+            count++
+        }
+
+        return NodeScanContext(isInsideQuote = isQuote, isInsideList = isList, isSent = isSent)
+    }
+
     private fun extractTextFromNode(node: AccessibilityNodeInfo, packageName: String, chatTitle: String) {
         if (node.text != null && node.text.isNotBlank()) {
             val text = node.text.toString()
-            
-            // Basic filtering to avoid processing short UI labels
-            val lowerText = text.lowercase()
-            
-            // WhatsApp often adds invisible bidirectional markers to dates and times. Strip them out.
-            val cleanText = text.trim().replace(Regex("[\\u200E\\u200F\\u202A-\\u202E]"), "")
-            
-            // Check if the text is just a timestamp or date (e.g. "12:45 PM", "Yesterday", "Monday", "24 August 2023")
-            val isTimeOrDate = cleanText.matches(Regex("^\\d{1,2}:\\d{2}\\s*(AM|PM|am|pm)?$")) ||
-                               cleanText.matches(Regex("^(Yesterday|Today|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)$", RegexOption.IGNORE_CASE)) ||
-                               cleanText.matches(Regex("^\\d{1,2}/\\d{1,2}/\\d{2,4}$")) ||
-                               cleanText.matches(Regex("^\\d{1,2}\\s+[A-Za-z]+\\s+\\d{4}$")) || // e.g., "24 August 2023"
-                               cleanText.matches(Regex("^[A-Za-z]+\\s+\\d{1,2},?\\s+\\d{4}$")) // e.g., "August 24, 2023"
-            
-            // Skip editable text fields (this is where the user is currently typing a message)
+            val cleanText = text.trim().replace(BIDI_REGEX, "")
+            val lowerText = cleanText.lowercase()
+
+            val isTimeOrDate = cleanText.matches(TIME_REGEX_1) ||
+                               cleanText.matches(TIME_REGEX_2) ||
+                               cleanText.matches(TIME_REGEX_3) ||
+                               cleanText.matches(TIME_REGEX_4) ||
+                               cleanText.matches(TIME_REGEX_5)
+
             val isEditable = node.isEditable
-            
-            val ignoredExactWords = setOf(
-                "message", "forwarded", "forwarded many times",
-                "document", "camera", "gallery", "audio", "location", "contact", "poll",
-                "recent", "images", "image", "photo", "photos", "video", "videos", "files",
-                "gif", "stickers", "avatar", "payment", "catalogue", "reply", "copy", "delete",
-                "share", "info", "report", "block", "cancel", "ok", "yes", "no", "done", "send",
-                "attach", "attachment", "recent files", "all files", "downloads", "documents",
-                "large files", "oldest", "newest", "sort by", "view", "edit", "select", "albums", "add"
-            )
-            
+
             if (!isEditable && !isTimeOrDate && cleanText.isNotEmpty() && 
-                !ignoredExactWords.contains(lowerText.trim()) &&
+                !IGNORED_EXACT_WORDS.contains(lowerText.trim()) &&
                 !lowerText.contains("type a message") && 
                 !lowerText.contains("search") &&
                 !lowerText.contains("type an sms message") &&
@@ -539,54 +592,37 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 !lowerText.contains("you're both in") &&
                 !lowerText.contains("groups including")) {
                 
-                val bounds = android.graphics.Rect()
-                node.getBoundsInScreen(bounds)
-                val screenWidth = resources.displayMetrics.widthPixels
-                
-                // --- ROBUST FILTERING ---
                 val viewId = node.viewIdResourceName ?: ""
-                
-                // 1. Explicitly ignore known bad UI elements (Sender names in groups, timestamps, list previews)
                 val isKnownBadId = viewId.endsWith("name_in_message_color") || 
                                    viewId.endsWith("date") ||
                                    viewId.endsWith("conversations_row_message") ||
                                    viewId.endsWith("conversation_contact_name")
                                    
-                // 2. Center-Alignment Rejection for System Messages
+                val bounds = android.graphics.Rect()
+                node.getBoundsInScreen(bounds)
+                val screenWidth = resources.displayMetrics.widthPixels
+
                 val nodeCenter = bounds.centerX()
                 val screenCenter = screenWidth / 2
-                // If the text is strictly centered (within 5% of the center) and spans less than 50% of screen, it's likely a system message (e.g. date header)
                 val isCenterAligned = Math.abs(nodeCenter - screenCenter) < (screenWidth * 0.05f) && bounds.width() < (screenWidth * 0.5f)
 
-                // 3. Known Message IDs
-                val isKnownMessageId = viewId.endsWith("message_text") || 
-                                       viewId.endsWith("chat_message_text") || 
-                                       viewId.endsWith("text_message")
-                
-                val isValidMessage = !isKnownBadId && !isCenterAligned && !isNodeInsideQuote(node) && (isKnownMessageId || isNodeInsideList(node))
+                if (!isKnownBadId && !isCenterAligned) {
+                    val isKnownMessageId = viewId.endsWith("message_text") || 
+                                           viewId.endsWith("chat_message_text") || 
+                                           viewId.endsWith("text_message")
+                    
+                    val contextInfo = inspectNodeContext(node, screenWidth, packageName.contains("whatsapp"))
+                    val isValidMessage = !contextInfo.isInsideQuote && (isKnownMessageId || contextInfo.isInsideList)
 
-                if (isValidMessage) {
-                    // In WhatsApp, if a user replies with a short message to a very wide quoted message,
-                    // the short text node itself will be left-aligned inside the wide right-aligned chat bubble.
-                    // This means the text node's distanceToLeftEdge < distanceToRightEdge, falsely marking it as received!
-                    // To fix this, we must check if the node OR ANY OF ITS PARENTS is a right-aligned chat bubble.
-                    val isSent = isNodeInsideSentMessage(node, screenWidth, packageName.contains("whatsapp"))
-                    val isReceivedMessage = !isSent
-                
-                    val isApk = lowerText.contains(".apk")
-    
-                    if (isReceivedMessage) {
-                        if (chatTitle.isNotEmpty() && text.trim() == chatTitle.trim()) {
-                            // Skip if the extracted text is exactly the sender's name (the top header bar)
-                        } else {
+                    if (isValidMessage && !contextInfo.isSent) {
+                        if (chatTitle.isEmpty() || text.trim() != chatTitle.trim()) {
                             val finalSender = if (chatTitle.isNotEmpty()) chatTitle else "Screen Reader"
+                            val isApk = lowerText.contains(".apk")
                             val message = MessageEntity(
                                 sender = finalSender,
                                 content = text.trim(),
                                 appName = packageName
                             )
-                            
-                            // The analyzeMessage method handles deduplication automatically
                             ScamAnalyzer.getInstance(this).analyzeMessage(message, isApk = isApk, isFakeCredit = false)
                         }
                     }
@@ -594,95 +630,14 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             }
         }
 
-        for (i in 0 until node.childCount) {
+        // Traverse children in reverse order (bottom-most newest messages processed first!)
+        for (i in node.childCount - 1 downTo 0) {
             val childNode = node.getChild(i)
             if (childNode != null) {
                 extractTextFromNode(childNode, packageName, chatTitle)
-                childNode.recycle() // Important: recycle to avoid memory leaks
+                childNode.recycle()
             }
         }
-    }
-
-    private fun isNodeInsideQuote(node: AccessibilityNodeInfo): Boolean {
-        var current: AccessibilityNodeInfo? = node
-        var count = 0
-        while (current != null && count < 30) {
-            val viewId = current.viewIdResourceName?.lowercase() ?: ""
-            if (viewId.contains("quote") || viewId.contains("reply")) {
-                return true
-            }
-            current = current.parent
-            count++
-        }
-        return false
-    }
-
-    private fun isNodeInsideList(node: AccessibilityNodeInfo): Boolean {
-        var current: AccessibilityNodeInfo? = node
-        var count = 0
-        while (current != null && count < 30) {
-            val className = current.className?.toString() ?: ""
-            if (className.contains("RecyclerView") || className.contains("ListView") || className.contains("ScrollView")) {
-                return true
-            }
-            current = current.parent
-            count++
-        }
-        return false
-    }
-
-                            private fun isNodeInsideSentMessage(node: AccessibilityNodeInfo, screenWidth: Int, isWhatsApp: Boolean): Boolean {
-        var current: AccessibilityNodeInfo? = node
-        var count = 0
-
-        while (current != null && count < 20) {
-            val contentDesc = current.contentDescription?.toString()?.lowercase() ?: ""
-            if (contentDesc.startsWith("you:") || contentDesc.contains("you: ")) {
-                return true
-            }
-
-            val className = current.className?.toString() ?: ""
-            if (className.contains("RecyclerView") || className.contains("ListView") || className.contains("ScrollView")) {
-                // Reached the list of all messages. Stop here so we don't accidentally find status icons of OTHER messages on the screen.
-                break
-            }
-            
-            if (isWhatsApp) {
-                // For WhatsApp, we rely EXCLUSIVELY on the deterministic status icon
-                var foundStatus = false
-                val statusNodes1 = current.findAccessibilityNodeInfosByViewId("com.whatsapp:id/status")
-                if (!statusNodes1.isNullOrEmpty()) {
-                    foundStatus = true
-                    statusNodes1.forEach { it.recycle() }
-                }
-                
-                val statusNodes2 = current.findAccessibilityNodeInfosByViewId("com.whatsapp:id/message_status_indicator")
-                if (!statusNodes2.isNullOrEmpty()) {
-                    foundStatus = true
-                    statusNodes2.forEach { it.recycle() }
-                }
-                
-                if (foundStatus) return true
-            } else {
-                // For SMS and other apps, we use the geometry fallback check
-                val bounds = android.graphics.Rect()
-                current.getBoundsInScreen(bounds)
-                
-                if (bounds.width() > 0 && bounds.height() > 0) {
-                    val distanceToLeftEdge = bounds.left
-                    val distanceToRightEdge = screenWidth - bounds.right
-                    
-                    if (bounds.width() < screenWidth * 0.99f) {
-                        if (distanceToRightEdge < distanceToLeftEdge - (screenWidth * 0.02f) && distanceToRightEdge <= (screenWidth * 0.25f)) {
-                            return true
-                        }
-                    }
-                }
-            }
-            current = current.parent
-            count++
-        }
-        return false
     }
 
     override fun onInterrupt() {
