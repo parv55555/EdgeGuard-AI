@@ -61,4 +61,9 @@ object ContactUtils {
         // Note: Saved contacts also contain letters, but they are filtered out BEFORE this using isContactExists.
         return title.any { it.isLetter() }
     }
+
+    fun isAlphabetOrAlphanumeric(name: String): Boolean {
+        if (name.isBlank()) return false
+        return name.any { it.isLetter() }
+    }
 }

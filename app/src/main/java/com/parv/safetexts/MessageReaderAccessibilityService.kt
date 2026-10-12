@@ -500,9 +500,17 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             }
 
             if (cachedIsActualChat && !cachedIsProfileScreen && !cachedIsNonChatScreen) {
+                val effectiveTitle = cachedChatTitle.ifEmpty { currentChatTitle }
+                val isAlphabetSender = isWhatsApp && effectiveTitle.isNotEmpty() && 
+                    (ContactUtils.isAlphabetOrAlphanumeric(effectiveTitle) || ContactUtils.isContactExists(this, effectiveTitle))
+
                 if (isVerified) {
                     // VERIFIED BLUE TICK ACCOUNT: DO NOT SCAN AT ALL!
                     Log.d("MessageReader", "Skipping verified WhatsApp account: '$cachedChatTitle'")
+                } else if (isAlphabetSender) {
+                    // Sender name is in Alphabet / Alphanumeric instead of phone number -> DO NOT SCAN!
+                    // Only scan for malicious .apk files if present!
+                    scanForApksOnly(rootNode, packageName, effectiveTitle)
                 } else if (isGroup) {
                     // WhatsApp & Telegram groups: ONLY scan for malicious .apk files, NEVER read or alert on chat text!
                     scanForApksOnly(rootNode, packageName, cachedChatTitle)
@@ -983,6 +991,17 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 
                 val viewId = node.viewIdResourceName ?: ""
                 if (packageName.contains("whatsapp")) {
+                    val effectiveSender = chatTitle.ifEmpty { cachedChatTitle }
+                    val isAlphabetSender = effectiveSender.isNotEmpty() && 
+                        (ContactUtils.isAlphabetOrAlphanumeric(effectiveSender) || ContactUtils.isContactExists(this, effectiveSender))
+                    if (isAlphabetSender && !lowerText.contains(".apk")) {
+                        return
+                    }
+
+                    if (effectiveSender.isEmpty() && !lowerText.contains(".apk")) {
+                        return
+                    }
+
                     // Strict verified account exclusion: NEVER read messages from verified accounts!
                     val isVerifiedChat = cachedIsVerifiedAccount || (chatTitle.isNotEmpty() && knownVerifiedAccounts.contains(chatTitle))
                     if (isVerifiedChat) {
