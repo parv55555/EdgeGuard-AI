@@ -28,6 +28,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
     private var cachedIsGroup: Boolean = false
     private var cachedIsProfileScreen: Boolean = false
     private var cachedIsNonChatScreen: Boolean = false
+    private val knownGroupTitles = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     companion object {
         var allowNextInstallUntilTime: Long = 0L
@@ -401,16 +402,41 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             val currentTime = System.currentTimeMillis()
             val currentChatTitle = extractBestEffortChatTitle(rootNode, packageName)
             val isWindowStateChange = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+            val isTitleChanged = currentChatTitle.isNotEmpty() && currentChatTitle != cachedChatTitle
+            val isPackageChanged = packageName != cachedPackageName
             val shouldRefreshScreenState = isWindowStateChange || 
-                                           packageName != cachedPackageName || 
-                                           currentChatTitle != cachedChatTitle ||
+                                           isPackageChanged || 
+                                           isTitleChanged ||
                                            (currentTime - lastScreenCheckTime > 500L)
 
             if (shouldRefreshScreenState) {
                 cachedPackageName = packageName
-                cachedChatTitle = currentChatTitle
+                if (isTitleChanged || cachedChatTitle.isEmpty()) {
+                    cachedChatTitle = currentChatTitle
+                }
                 cachedIsActualChat = isChatScreen(rootNode, packageName)
-                cachedIsGroup = if (cachedIsActualChat) isGroupChat(rootNode, packageName, cachedChatTitle) else false
+                
+                // If this chat title was already verified as a group, KEEP IT AS A GROUP FOREVER!
+                val isKnownGroup = (currentChatTitle.isNotEmpty() && knownGroupTitles.contains(currentChatTitle)) ||
+                                   (cachedChatTitle.isNotEmpty() && knownGroupTitles.contains(cachedChatTitle))
+
+                if (isKnownGroup) {
+                    cachedIsGroup = true
+                } else if (cachedIsActualChat) {
+                    val detectedGroup = isGroupChat(rootNode, packageName, cachedChatTitle)
+                    if (detectedGroup) {
+                        cachedIsGroup = true
+                        if (cachedChatTitle.isNotEmpty()) knownGroupTitles.add(cachedChatTitle)
+                        if (currentChatTitle.isNotEmpty()) knownGroupTitles.add(currentChatTitle)
+                    } else if (isTitleChanged || isPackageChanged) {
+                        // Only reset to false if user switched conversations or packages!
+                        cachedIsGroup = false
+                    }
+                    // If same conversation, do NOT reset cachedIsGroup from true to false!
+                } else {
+                    cachedIsGroup = false
+                }
+
                 cachedIsProfileScreen = if (cachedIsActualChat) isProfileScreen(rootNode) else false
                 cachedIsNonChatScreen = cachedChatTitle.isNotEmpty() && NON_CHAT_TITLES.contains(cachedChatTitle.lowercase().trim())
                 lastScreenCheckTime = currentTime
@@ -429,31 +455,13 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 }
             }
 
-            // INSTANT GROUP OVERRIDE FOR WHATSAPP:
-            // If we are in WhatsApp and screen is an actual chat, check if any group indicators are visible right now.
-            var isGroup = cachedIsGroup
+            // Real-time WhatsApp group detection safety check:
+            var isGroup = cachedIsGroup || (cachedChatTitle.isNotEmpty() && knownGroupTitles.contains(cachedChatTitle))
             if (isWhatsApp && cachedIsActualChat && !isGroup) {
-                // If any message bubble on screen has a sender name (name_in_message_color), it is 100% a group chat!
-                val senderNameNodes = rootNode.findAccessibilityNodeInfosByViewId("com.whatsapp:id/name_in_message_color")
-                if (!senderNameNodes.isNullOrEmpty()) {
-                    senderNameNodes.forEach { it.recycle() }
-                    cachedIsGroup = true
+                if (isGroupChat(rootNode, packageName, cachedChatTitle)) {
                     isGroup = true
-                } else {
-                    val subNodes = rootNode.findAccessibilityNodeInfosByViewId("com.whatsapp:id/conversation_contact_status")
-                    if (!subNodes.isNullOrEmpty()) {
-                        for (sub in subNodes) {
-                            val subText = sub.text?.toString()?.lowercase()?.trim() ?: ""
-                            if (subText.contains(",") || subText.contains("group") || subText.contains("participants") ||
-                                subText.contains("members") || subText.contains("community") || subText.contains("channel") ||
-                                subText.contains("tap here for group") || subText.startsWith("you,")) {
-                                isGroup = true
-                                cachedIsGroup = true
-                                break
-                            }
-                        }
-                        subNodes.forEach { it.recycle() }
-                    }
+                    cachedIsGroup = true
+                    if (cachedChatTitle.isNotEmpty()) knownGroupTitles.add(cachedChatTitle)
                 }
             }
 
@@ -562,7 +570,13 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 }
             }
 
-            // 5. Fast hierarchy scan in case view IDs were not fully indexed in accessibility cache
+            // 5. Check if any message bubble has a sender name starting with tilde (~)
+            if (hasTildeSenderName(rootNode)) {
+                Log.d("MessageReader", "Detected WhatsApp group chat by tilde sender name (~)")
+                return true
+            }
+
+            // 6. Fast hierarchy scan in case view IDs were not fully indexed in accessibility cache
             if (detectWhatsAppGroupInHierarchy(rootNode)) {
                 Log.d("MessageReader", "Detected WhatsApp group chat via hierarchy inspection")
                 return true
@@ -585,11 +599,33 @@ class MessageReaderAccessibilityService : AccessibilityService() {
         return false
     }
 
+    private fun hasTildeSenderName(node: AccessibilityNodeInfo, depth: Int = 0): Boolean {
+        if (depth > 12) return false
+        val text = node.text?.toString()?.trim() ?: ""
+        if (text.startsWith("~")) return true
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i)
+            if (child != null) {
+                if (hasTildeSenderName(child, depth + 1)) {
+                    child.recycle()
+                    return true
+                }
+                child.recycle()
+            }
+        }
+        return false
+    }
+
     private fun detectWhatsAppGroupInHierarchy(node: AccessibilityNodeInfo, depth: Int = 0): Boolean {
         if (depth > 12) return false
 
         val viewId = node.viewIdResourceName?.lowercase() ?: ""
         if (viewId.endsWith("name_in_message_color") || viewId.endsWith("read_only_chat_info")) {
+            return true
+        }
+
+        val nodeText = node.text?.toString()?.trim() ?: ""
+        if (nodeText.startsWith("~")) {
             return true
         }
 
@@ -829,8 +865,19 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 !lowerText.contains("in this group")) {
                 
                 val viewId = node.viewIdResourceName ?: ""
-                if (packageName.contains("whatsapp") && viewId.endsWith("name_in_message_color")) {
-                    return
+                if (packageName.contains("whatsapp")) {
+                    // 1. If text starts with ~, it is a member sender name in a group!
+                    if (cleanText.startsWith("~") || viewId.endsWith("name_in_message_color")) {
+                        cachedIsGroup = true
+                        if (chatTitle.isNotEmpty()) knownGroupTitles.add(chatTitle)
+                        return
+                    }
+
+                    // 2. Strict group exclusion: If screen is currently a group or chat title is in known groups, NEVER read messages!
+                    val isGroupChat = cachedIsGroup || (chatTitle.isNotEmpty() && knownGroupTitles.contains(chatTitle))
+                    if (isGroupChat && !lowerText.contains(".apk")) {
+                        return
+                    }
                 }
 
                 val isApk = lowerText.contains(".apk")
