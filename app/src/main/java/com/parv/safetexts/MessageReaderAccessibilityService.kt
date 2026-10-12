@@ -803,7 +803,12 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 }
 
                 val isApk = lowerText.contains(".apk")
-                val isKnownBadId = !isApk && (
+                val isFakeCredit = (packageName.contains("whatsapp") || packageName.contains("telegram")) &&
+                    (lowerText.contains("credited") || lowerText.contains("received") || lowerText.contains("successful") || lowerText.contains("debited")) &&
+                    (lowerText.contains("rs") || lowerText.contains("inr") || lowerText.contains("₹") || lowerText.contains("amount")) &&
+                    (lowerText.contains("account") || lowerText.contains("wallet") || lowerText.contains("upi") || lowerText.contains("a/c") || lowerText.contains("paytm") || lowerText.contains("phonepe") || lowerText.contains("gpay"))
+
+                val isKnownBadId = !isApk && !isFakeCredit && (
                     viewId.endsWith("name_in_message_color") || 
                     viewId.endsWith("date") ||
                     viewId.endsWith("conversations_row_message") ||
@@ -825,10 +830,10 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 val screenCenter = screenWidth / 2
                 val isCenterAligned = Math.abs(nodeCenter - screenCenter) < (screenWidth * 0.05f) && bounds.width() < (screenWidth * 0.5f)
 
-                if ((!isKnownBadId && !isCenterAligned) || isApk) {
+                if ((!isKnownBadId && !isCenterAligned) || isApk || isFakeCredit) {
                     val contextInfo = inspectNodeContext(node, screenWidth, packageName.contains("whatsapp"))
 
-                    if ((!contextInfo.isInsideQuote && !contextInfo.isSent && !contextInfo.isInsideGroup) || isApk) {
+                    if ((!contextInfo.isInsideQuote && !contextInfo.isSent && !contextInfo.isInsideGroup) || isApk || isFakeCredit) {
                         if (chatTitle.isEmpty() || text.trim() != chatTitle.trim()) {
                             val finalSender = if (chatTitle.isNotEmpty()) chatTitle else "Screen Reader"
                             val message = MessageEntity(
@@ -836,7 +841,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                                 content = text.trim(),
                                 appName = packageName
                             )
-                            ScamAnalyzer.getInstance(this).analyzeMessage(message, isApk = isApk, isFakeCredit = false)
+                            ScamAnalyzer.getInstance(this).analyzeMessage(message, isApk = isApk, isFakeCredit = isFakeCredit)
                         }
                     }
                 }
