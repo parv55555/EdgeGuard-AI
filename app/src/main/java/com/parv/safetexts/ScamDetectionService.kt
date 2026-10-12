@@ -292,9 +292,15 @@ class ScamDetectionService : NotificationListenerService() {
         val conversationTitle = extras.getString(Notification.EXTRA_CONVERSATION_TITLE)
         val isReallyGroup = extras.getBoolean(Notification.EXTRA_IS_GROUP_CONVERSATION, false) || !conversationTitle.isNullOrEmpty()
         
-        // Use shortcutId which contains the WhatsApp JID to flawlessly detect groups/channels
+        // Use shortcutId, sbn tag, and sbn key which contain the WhatsApp JID to flawlessly detect groups/channels
         val shortcutId = sbn.notification.shortcutId ?: ""
-        val isJidGroupOrChannel = isWhatsApp && (shortcutId.contains("@g.us") || shortcutId.contains("@newsletter") || shortcutId.contains("@broadcast"))
+        val tag = sbn.tag ?: ""
+        val key = sbn.key
+        val isJidGroupOrChannel = isWhatsApp && (
+            shortcutId.contains("@g.us") || shortcutId.contains("@newsletter") || shortcutId.contains("@broadcast") || shortcutId.contains("@temp") ||
+            tag.contains("@g.us") || tag.contains("@newsletter") || tag.contains("@broadcast") ||
+            key.contains("@g.us") || key.contains("@newsletter") || key.contains("@broadcast")
+        )
 
         if (isOfficialWhatsApp || isVerifiedCompany || isAlphanumericSms || isSavedContact || (isWhatsApp && isReallyGroup) || isJidGroupOrChannel) {
             return

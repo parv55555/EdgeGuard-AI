@@ -399,39 +399,110 @@ class MessageReaderAccessibilityService : AccessibilityService() {
 
     private fun isGroupChat(rootNode: AccessibilityNodeInfo, packageName: String, chatTitle: String): Boolean {
         if (packageName.contains("whatsapp")) {
-            val subtitles = rootNode.findAccessibilityNodeInfosByViewId("com.whatsapp:id/conversation_contact_status")
-            if (!subtitles.isNullOrEmpty()) {
-                val text = subtitles[0].text?.toString()?.lowercase() ?: ""
-                subtitles.forEach { it.recycle() }
-                if (text.startsWith("you, ") || text.startsWith("you and ") || 
-                    text.contains("participants") || text.contains("members") || 
-                    text.contains("group") || text.contains("community") || 
-                    text.contains("channel") || text.contains("announcement") || 
-                    text.contains("only admins can send")) {
+            // 1. Check subtitle view IDs across regular WhatsApp and WhatsApp Business
+            val subtitleIds = listOf(
+                "$packageName:id/conversation_contact_status",
+                "com.whatsapp:id/conversation_contact_status",
+                "com.whatsapp.w4b:id/conversation_contact_status"
+            )
+            for (id in subtitleIds) {
+                val subtitles = rootNode.findAccessibilityNodeInfosByViewId(id)
+                if (!subtitles.isNullOrEmpty()) {
+                    for (sub in subtitles) {
+                        val text = sub.text?.toString()?.lowercase()?.trim() ?: ""
+                        if (text.isNotEmpty()) {
+                            // In WhatsApp groups, the subtitle is the participants list (e.g. "Alice, Bob, You")
+                            // or group status info. A 1-on-1 chat subtitle NEVER contains a comma.
+                            if (text.contains(",") ||
+                                text.contains("group") ||
+                                text.contains("participants") ||
+                                text.contains("members") ||
+                                text.contains("community") ||
+                                text.contains("channel") ||
+                                text.contains("announcement") ||
+                                text.contains("only admins") ||
+                                text.contains("admins can send") ||
+                                text.contains("tap here for group") ||
+                                text.contains("tap here for info") ||
+                                text.startsWith("you,") ||
+                                text.startsWith("you and") ||
+                                (text.contains(" and ") && (text.contains("other") || text.contains("more"))) ||
+                                (text.endsWith("typing...") && text != "typing...") ||
+                                (text.endsWith("recording audio...") && text != "recording audio...")
+                            ) {
+                                subtitles.forEach { it.recycle() }
+                                Log.d("MessageReader", "Detected WhatsApp group chat by subtitle: '$text'")
+                                return true
+                            }
+                        }
+                    }
+                    subtitles.forEach { it.recycle() }
+                }
+            }
+
+            // 2. Check profile photo content description across WhatsApp and WhatsApp Business
+            val photoIds = listOf(
+                "$packageName:id/conversation_contact_photo",
+                "com.whatsapp:id/conversation_contact_photo",
+                "com.whatsapp.w4b:id/conversation_contact_photo"
+            )
+            for (id in photoIds) {
+                val photoNodes = rootNode.findAccessibilityNodeInfosByViewId(id)
+                if (!photoNodes.isNullOrEmpty()) {
+                    for (photo in photoNodes) {
+                        val contentDesc = photo.contentDescription?.toString()?.lowercase() ?: ""
+                        if (contentDesc.contains("group") || contentDesc.contains("community") || contentDesc.contains("channel")) {
+                            photoNodes.forEach { it.recycle() }
+                            Log.d("MessageReader", "Detected WhatsApp group chat by photo desc: '$contentDesc'")
+                            return true
+                        }
+                    }
+                    photoNodes.forEach { it.recycle() }
+                }
+            }
+
+            // 3. Sender name headers on messages (name_in_message_color): 100% exclusive to group chats!
+            val nameIds = listOf(
+                "$packageName:id/name_in_message_color",
+                "com.whatsapp:id/name_in_message_color",
+                "com.whatsapp.w4b:id/name_in_message_color"
+            )
+            for (id in nameIds) {
+                val nameNodes = rootNode.findAccessibilityNodeInfosByViewId(id)
+                if (!nameNodes.isNullOrEmpty()) {
+                    nameNodes.forEach { it.recycle() }
+                    Log.d("MessageReader", "Detected WhatsApp group chat by name_in_message_color presence")
                     return true
                 }
             }
-            // Check content description of the profile photo
-            val photoNodes = rootNode.findAccessibilityNodeInfosByViewId("com.whatsapp:id/conversation_contact_photo")
-            if (!photoNodes.isNullOrEmpty()) {
-                val contentDesc = photoNodes[0].contentDescription?.toString()?.lowercase() ?: ""
-                photoNodes.forEach { it.recycle() }
-                if (contentDesc.contains("group") || contentDesc.contains("community")) {
+
+            // 4. Check for group-specific notices / read-only chat info
+            val readOnlyIds = listOf(
+                "$packageName:id/read_only_chat_info",
+                "com.whatsapp:id/read_only_chat_info",
+                "com.whatsapp.w4b:id/read_only_chat_info"
+            )
+            for (id in readOnlyIds) {
+                val readOnlyNodes = rootNode.findAccessibilityNodeInfosByViewId(id)
+                if (!readOnlyNodes.isNullOrEmpty()) {
+                    readOnlyNodes.forEach { it.recycle() }
+                    Log.d("MessageReader", "Detected WhatsApp group chat by read_only_chat_info")
                     return true
                 }
             }
-            // Another strong indicator: if we see participant names above messages in the chat
-            val nameNodes = rootNode.findAccessibilityNodeInfosByViewId("com.whatsapp:id/name_in_message_color")
-            if (!nameNodes.isNullOrEmpty()) {
-                nameNodes.forEach { it.recycle() }
+
+            // 5. Fast hierarchy scan in case view IDs were not fully indexed in accessibility cache
+            if (detectWhatsAppGroupInHierarchy(rootNode)) {
+                Log.d("MessageReader", "Detected WhatsApp group chat via hierarchy inspection")
                 return true
             }
+
         } else if (packageName.contains("telegram")) {
             val subtitles = rootNode.findAccessibilityNodeInfosByViewId("org.telegram.messenger:id/action_bar_subtitle")
             if (!subtitles.isNullOrEmpty()) {
                 val text = subtitles[0].text?.toString()?.lowercase() ?: ""
                 subtitles.forEach { it.recycle() }
-                if (text.contains("members") || text.contains("subscribers")) {
+                if (text.contains("members") || text.contains("subscribers") || text.contains(",")) {
                     return true
                 }
             }
@@ -440,6 +511,56 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 return true
             }
         }
+        return false
+    }
+
+    private fun detectWhatsAppGroupInHierarchy(node: AccessibilityNodeInfo, depth: Int = 0): Boolean {
+        if (depth > 12) return false
+
+        val viewId = node.viewIdResourceName?.lowercase() ?: ""
+        if (viewId.endsWith("name_in_message_color") || viewId.endsWith("read_only_chat_info")) {
+            return true
+        }
+
+        if (viewId.endsWith("conversation_contact_status")) {
+            val text = node.text?.toString()?.lowercase()?.trim() ?: ""
+            if (text.contains(",") || text.contains("group") || text.contains("participants") ||
+                text.contains("members") || text.contains("community") || text.contains("channel") ||
+                text.contains("announcement") || text.contains("admins") || text.contains("others")) {
+                return true
+            }
+        }
+
+        if (viewId.endsWith("conversation_contact_photo")) {
+            val desc = node.contentDescription?.toString()?.lowercase() ?: ""
+            if (desc.contains("group") || desc.contains("community") || desc.contains("channel")) {
+                return true
+            }
+        }
+
+        // Group system message check: "Messages and calls are end-to-end encrypted in this group"
+        if (node.text != null) {
+            val text = node.text.toString().lowercase()
+            if (text.contains("in this group") || 
+                text.contains("only admins can send") ||
+                text.contains("tap here for group info") ||
+                text.contains("you joined using this group") ||
+                text.contains("you were added to this group")) {
+                return true
+            }
+        }
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i)
+            if (child != null) {
+                if (detectWhatsAppGroupInHierarchy(child, depth + 1)) {
+                    child.recycle()
+                    return true
+                }
+                child.recycle()
+            }
+        }
+
         return false
     }
 
@@ -534,12 +655,14 @@ class MessageReaderAccessibilityService : AccessibilityService() {
 
     private data class NodeScanContext(
         val isInsideQuote: Boolean,
-        val isSent: Boolean
+        val isSent: Boolean,
+        val isInsideGroup: Boolean = false
     )
 
     private fun inspectNodeContext(node: AccessibilityNodeInfo, screenWidth: Int, isWhatsApp: Boolean): NodeScanContext {
         var isQuote = false
         var isSent = false
+        var isGroup = false
         var current: AccessibilityNodeInfo? = node
         var count = 0
 
@@ -561,9 +684,28 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 isQuote = true
             }
 
+            if (isWhatsApp && (viewId.endsWith("name_in_message_color") || viewId.endsWith("read_only_chat_info"))) {
+                isGroup = true
+            }
+
             val contentDesc = current.contentDescription?.toString()?.lowercase() ?: ""
             if (contentDesc.startsWith("you:") || contentDesc.contains("you: ")) {
                 isSent = true
+            }
+
+            // Check if current node is a bubble container that has a sender name child (name_in_message_color)
+            if (isWhatsApp && !isGroup && count <= 3) {
+                for (c in 0 until current.childCount) {
+                    val child = current.getChild(c)
+                    if (child != null) {
+                        val cId = child.viewIdResourceName?.lowercase() ?: ""
+                        if (cId.endsWith("name_in_message_color")) {
+                            isGroup = true
+                        }
+                        child.recycle()
+                    }
+                    if (isGroup) break
+                }
             }
 
             val className = current.className?.toString() ?: ""
@@ -575,7 +717,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             count++
         }
 
-        return NodeScanContext(isInsideQuote = isQuote, isSent = isSent)
+        return NodeScanContext(isInsideQuote = isQuote, isSent = isSent, isInsideGroup = isGroup)
     }
 
     private fun extractTextFromNode(node: AccessibilityNodeInfo, packageName: String, chatTitle: String) {
@@ -609,9 +751,16 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 !lowerText.contains("this business uses a secure service") &&
                 !lowerText.contains("waiting for this message") &&
                 !lowerText.contains("you're both in") &&
-                !lowerText.contains("groups including")) {
+                !lowerText.contains("groups including") &&
+                !lowerText.contains("tap here for group info") &&
+                !lowerText.contains("only admins can send") &&
+                !lowerText.contains("in this group")) {
                 
                 val viewId = node.viewIdResourceName ?: ""
+                if (packageName.contains("whatsapp") && viewId.endsWith("name_in_message_color")) {
+                    return
+                }
+
                 val isKnownBadId = viewId.endsWith("name_in_message_color") || 
                                    viewId.endsWith("date") ||
                                    viewId.endsWith("conversations_row_message") ||
@@ -635,7 +784,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 if (!isKnownBadId && !isCenterAligned) {
                     val contextInfo = inspectNodeContext(node, screenWidth, packageName.contains("whatsapp"))
 
-                    if (!contextInfo.isInsideQuote && !contextInfo.isSent) {
+                    if (!contextInfo.isInsideQuote && !contextInfo.isSent && !contextInfo.isInsideGroup) {
                         if (chatTitle.isEmpty() || text.trim() != chatTitle.trim()) {
                             val finalSender = if (chatTitle.isNotEmpty()) chatTitle else "Screen Reader"
                             val isApk = lowerText.contains(".apk")
