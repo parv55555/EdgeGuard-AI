@@ -79,6 +79,13 @@ class ScamAnalyzer private constructor(private val context: Context) {
     }
 
     fun analyzeMessage(message: MessageEntity, onDuplicateScam: ((MessageEntity) -> Unit)? = null, isApk: Boolean = false, isFakeCredit: Boolean = false) {
+        val senderLower = message.sender.lowercase().trim()
+        val contentLower = message.content.lowercase().trim()
+
+        if (contentLower.isEmpty() || senderLower == "settings" || senderLower == "whatsapp" || senderLower == "chats") {
+            return
+        }
+
         val msgHash = (message.sender + message.content).hashCode()
         val currentTime = System.currentTimeMillis()
 

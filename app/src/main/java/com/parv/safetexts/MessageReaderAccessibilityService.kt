@@ -30,6 +30,14 @@ class MessageReaderAccessibilityService : AccessibilityService() {
         private val TIME_REGEX_3 = Regex("^\\d{1,2}/\\d{1,2}/\\d{2,4}$")
         private val TIME_REGEX_4 = Regex("^\\d{1,2}\\s+[A-Za-z]+\\s+\\d{4}$")
         private val TIME_REGEX_5 = Regex("^[A-Za-z]+\\s+\\d{1,2},?\\s+\\d{4}$")
+        private val NON_CHAT_TITLES = setOf(
+            "whatsapp", "settings", "chats", "privacy", "account", "notifications",
+            "storage and data", "help", "app language", "starred messages", "linked devices",
+            "payments", "updates", "calls", "communities", "status", "new group", "new broadcast",
+            "messages", "search", "conversations", "contacts", "archived", "spam and blocked",
+            "security", "two-step verification", "change number", "request account info", "delete my account",
+            "avatar", "theme", "chat backup", "chat history", "security notifications"
+        )
         private val IGNORED_EXACT_WORDS = setOf(
             "message", "forwarded", "forwarded many times",
             "document", "camera", "gallery", "audio", "location", "contact", "poll",
@@ -37,7 +45,9 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             "gif", "stickers", "avatar", "payment", "catalogue", "reply", "copy", "delete",
             "share", "info", "report", "block", "cancel", "ok", "yes", "no", "done", "send",
             "attach", "attachment", "recent files", "all files", "downloads", "documents",
-            "large files", "oldest", "newest", "sort by", "view", "edit", "select", "albums", "add"
+            "large files", "oldest", "newest", "sort by", "view", "edit", "select", "albums", "add",
+            "chats", "updates", "communities", "calls", "settings", "search", "unread", "favorites", "groups",
+            "account", "privacy", "notifications", "storage and data", "app language", "help", "invite a friend"
         )
     }
 
@@ -375,12 +385,13 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 }
             }
 
-            // ONLY scan if we are on a chat screen, not a group or profile screen
-            val isOnChat = isChatScreen(rootNode, packageName) || chatTitle.isNotEmpty()
+            // STRICT GATE: ONLY scan if we are confirmed to be inside an actual active chat conversation
+            val isActualChat = isChatScreen(rootNode, packageName)
             val isGroup = isGroupChat(rootNode, packageName, chatTitle)
             val isProfileScreen = isProfileScreen(rootNode)
+            val isNonChatScreen = chatTitle.isNotEmpty() && NON_CHAT_TITLES.contains(chatTitle.lowercase().trim())
             
-            if (isOnChat && !isGroup && !isProfileScreen) {
+            if (isActualChat && !isGroup && !isProfileScreen && !isNonChatScreen) {
                 extractTextFromNode(rootNode, packageName, chatTitle)
             }
         }
@@ -434,32 +445,57 @@ class MessageReaderAccessibilityService : AccessibilityService() {
 
     private fun isChatScreen(node: AccessibilityNodeInfo, packageName: String = ""): Boolean {
         if (packageName.contains("whatsapp")) {
-            val entryNodes = node.findAccessibilityNodeInfosByViewId("$packageName:id/entry")
-            if (!entryNodes.isNullOrEmpty()) {
-                entryNodes.forEach { it.recycle() }
-                return true
+            val whatsappChatIndicators = listOf(
+                "com.whatsapp:id/entry",
+                "com.whatsapp.w4b:id/entry",
+                "$packageName:id/entry",
+                "com.whatsapp:id/conversation_contact_name",
+                "com.whatsapp.w4b:id/conversation_contact_name",
+                "$packageName:id/conversation_contact_name",
+                "com.whatsapp:id/voice_note_btn",
+                "com.whatsapp.w4b:id/voice_note_btn",
+                "$packageName:id/voice_note_btn"
+            )
+            for (id in whatsappChatIndicators) {
+                val found = node.findAccessibilityNodeInfosByViewId(id)
+                if (!found.isNullOrEmpty()) {
+                    found.forEach { it.recycle() }
+                    return true
+                }
             }
-            val voiceNodes = node.findAccessibilityNodeInfosByViewId("$packageName:id/voice_note_btn")
-            if (!voiceNodes.isNullOrEmpty()) {
-                voiceNodes.forEach { it.recycle() }
-                return true
+            // For WhatsApp, if none of these conversation elements exist, it is 100% Home Screen, Settings, Status, or Calls!
+            return false
+        } else if (packageName.contains("telegram")) {
+            val telegramChatIndicators = listOf(
+                "org.telegram.messenger:id/chat_text_edit",
+                "org.telegram.messenger:id/chat_write_box",
+                "org.telegram.messenger:id/chat_send_button"
+            )
+            for (id in telegramChatIndicators) {
+                val found = node.findAccessibilityNodeInfosByViewId(id)
+                if (!found.isNullOrEmpty()) {
+                    found.forEach { it.recycle() }
+                    return true
+                }
             }
-            val sendNodes = node.findAccessibilityNodeInfosByViewId("$packageName:id/send")
-            if (!sendNodes.isNullOrEmpty()) {
-                sendNodes.forEach { it.recycle() }
-                return true
-            }
+            return false
+        } else {
+            // For SMS: check for compose message box in bottom half of screen (not top search bars)
+            return hasBottomComposeBox(node)
         }
-        return hasEditableNode(node, 0)
     }
 
-    private fun hasEditableNode(node: AccessibilityNodeInfo, depth: Int): Boolean {
-        if (depth > 6) return false
-        if (node.isEditable) return true
+    private fun hasBottomComposeBox(node: AccessibilityNodeInfo): Boolean {
+        val screenHeight = resources.displayMetrics.heightPixels
+        val bounds = android.graphics.Rect()
+        node.getBoundsInScreen(bounds)
+        if (node.isEditable && bounds.top > screenHeight * 0.45f) {
+            return true
+        }
         for (i in 0 until node.childCount) {
             val child = node.getChild(i)
             if (child != null) {
-                if (hasEditableNode(child, depth + 1)) {
+                if (hasBottomComposeBox(child)) {
                     child.recycle()
                     return true
                 }
@@ -579,7 +615,14 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 val isKnownBadId = viewId.endsWith("name_in_message_color") || 
                                    viewId.endsWith("date") ||
                                    viewId.endsWith("conversations_row_message") ||
-                                   viewId.endsWith("conversation_contact_name")
+                                   viewId.endsWith("conversation_contact_name") ||
+                                   viewId.endsWith("conversation_contact_status") ||
+                                   viewId.endsWith("action_bar_title") ||
+                                   viewId.endsWith("title") ||
+                                   viewId.endsWith("subtitle") ||
+                                   viewId.endsWith("search_src_text") ||
+                                   viewId.endsWith("search_box_text") ||
+                                   viewId.endsWith("tab")
                                    
                 val bounds = android.graphics.Rect()
                 node.getBoundsInScreen(bounds)
@@ -939,14 +982,29 @@ class MessageReaderAccessibilityService : AccessibilityService() {
     }
 
     private fun extractBestEffortChatTitle(rootNode: AccessibilityNodeInfo, packageName: String): String {
+        if (packageName.contains("whatsapp")) {
+            val whatsappTitleIds = listOf(
+                "com.whatsapp:id/conversation_contact_name",
+                "com.whatsapp.w4b:id/conversation_contact_name",
+                "$packageName:id/conversation_contact_name"
+            )
+            for (id in whatsappTitleIds) {
+                val nodes = rootNode.findAccessibilityNodeInfosByViewId(id)
+                if (!nodes.isNullOrEmpty()) {
+                    val title = nodes[0].text?.toString()?.trim() ?: ""
+                    nodes.forEach { it.recycle() }
+                    if (title.isNotEmpty() && !NON_CHAT_TITLES.contains(title.lowercase())) return title
+                }
+            }
+            // For WhatsApp, if not inside an active conversation, do not fall back to action bar titles (e.g. Settings, WhatsApp)
+            return ""
+        }
+
         val candidateIds = listOf(
-            "$packageName:id/conversation_contact_name",
-            "com.whatsapp:id/conversation_contact_name",
-            "com.whatsapp.w4b:id/conversation_contact_name",
+            "$packageName:id/conversation_title",
             "$packageName:id/chat_name",
             "$packageName:id/contact_name",
             "$packageName:id/action_bar_title",
-            "$packageName:id/conversation_title",
             "$packageName:id/title"
         )
         for (id in candidateIds) {
@@ -954,12 +1012,15 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             if (!nodes.isNullOrEmpty()) {
                 val title = nodes[0].text?.toString()?.trim() ?: ""
                 nodes.forEach { it.recycle() }
-                if (title.isNotEmpty()) return title
+                if (title.isNotEmpty() && !NON_CHAT_TITLES.contains(title.lowercase())) return title
             }
         }
 
         if (packageName.contains("telegram")) {
-            return findFirstTextNode(rootNode)
+            val title = findFirstTextNode(rootNode).trim()
+            if (title.isNotEmpty() && !NON_CHAT_TITLES.contains(title.lowercase())) {
+                return title
+            }
         }
         
         return ""
