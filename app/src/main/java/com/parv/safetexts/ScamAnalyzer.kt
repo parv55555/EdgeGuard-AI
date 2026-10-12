@@ -89,13 +89,13 @@ class ScamAnalyzer private constructor(private val context: Context) {
         val msgHash = (message.sender + message.content).hashCode()
         val currentTime = System.currentTimeMillis()
 
-        // 1. If already saved in Room DB in this session, skip immediately
-        if (recordedInDb.contains(msgHash)) {
+        // 1. If already saved in Room DB in this session, skip immediately (unless it's an APK threat)
+        if (!isApk && recordedInDb.contains(msgHash)) {
             return
         }
 
         // 2. Prevent duplicate concurrent processing of the exact same message
-        if (!inProgressHashes.add(msgHash)) {
+        if (!isApk && !inProgressHashes.add(msgHash)) {
             return
         }
 
@@ -103,7 +103,8 @@ class ScamAnalyzer private constructor(private val context: Context) {
             try {
                 if (isApk || isFakeCredit) {
                     val lastAlert = recentlyAlertedScams[msgHash]
-                    val shouldAlert = lastAlert == null || (currentTime - lastAlert) >= 30000
+                    val throttleTime = if (isApk) 3000L else 30000L
+                    val shouldAlert = lastAlert == null || (currentTime - lastAlert) >= throttleTime
                     if (shouldAlert) {
                         recentlyAlertedScams[msgHash] = currentTime
                     }

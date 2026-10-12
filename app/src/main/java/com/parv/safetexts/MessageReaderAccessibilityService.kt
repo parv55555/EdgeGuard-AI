@@ -56,13 +56,39 @@ class MessageReaderAccessibilityService : AccessibilityService() {
 
         val packageName = event.packageName?.toString() ?: return
 
-        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+        // --- UNIVERSAL APK CLICK & DOWNLOAD INTERCEPTOR ---
+        if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+            val apkFound = findApkInEventOrSource(event)
+            if (apkFound != null && packageName != "com.parv.safetexts") {
+                Log.d("MessageReader", "User clicked on APK: $apkFound in $packageName")
+                val appTitle = when {
+                    packageName.contains("whatsapp") -> "WhatsApp"
+                    packageName.contains("chrome") -> "Chrome"
+                    packageName.contains("sbrowser") -> "Samsung Internet"
+                    packageName.contains("telegram") -> "Telegram"
+                    packageName.contains("myfiles") -> "My Files"
+                    else -> "Download Shield"
+                }
+                val alert = MessageEntity(
+                    sender = appTitle,
+                    content = "Malicious APK file: $apkFound",
+                    appName = packageName,
+                    analysisResult = "Alert",
+                    scamProbability = 1.0f
+                )
+                ScamAnalyzer.getInstance(this).analyzeMessage(alert, isApk = true)
+                return
+            }
+        }
+
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || 
+            event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
+            event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
             
             // LAYER 1: Pre-Install Shield for Malicious APKs
-            val isPackageInstaller = packageName == "com.google.android.packageinstaller" ||
-                                     packageName == "com.samsung.android.packageinstaller" ||
-                                     packageName == "com.miui.packageinstaller" ||
-                                     packageName == "com.android.packageinstaller" ||
+            val isPackageInstaller = packageName.contains("packageinstaller") ||
+                                     packageName == "android" ||
+                                     packageName == "com.sec.android.app.myfiles" ||
                                      packageName == "com.coloros.safecenter" ||
                                      packageName == "com.oplus.appmanager"
 
@@ -186,10 +212,11 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 }
             }
 
-            // 2. The Link Interceptor & Betting Scanner (Browser scanning)
+            // 2. The Link Interceptor & Betting Scanner & APK Download Scanner (Browser scanning)
             if (isBrowser) {
                 val rootNode = rootInActiveWindow
                 if (rootNode != null) {
+                    checkForBrowserApkDownload(rootNode, packageName)
                     if (checkForScamFunnel(rootNode)) {
                         Log.d("FunnelInterceptor", "Scam Funnel Detected on Screen! Blocking.")
                         triggerScamFunnelOverlay()
@@ -391,8 +418,14 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             val isProfileScreen = isProfileScreen(rootNode)
             val isNonChatScreen = chatTitle.isNotEmpty() && NON_CHAT_TITLES.contains(chatTitle.lowercase().trim())
             
-            if (isActualChat && !isGroup && !isProfileScreen && !isNonChatScreen) {
-                extractTextFromNode(rootNode, packageName, chatTitle)
+            if (isActualChat && !isProfileScreen && !isNonChatScreen) {
+                if (isGroup) {
+                    // Privacy for WhatsApp/Telegram groups: strictly do not read chat messages or chatter,
+                    // but ALWAYS scan for dangerous .apk files to protect user from APK malware!
+                    scanForApksOnly(rootNode, packageName, chatTitle)
+                } else {
+                    extractTextFromNode(rootNode, packageName, chatTitle)
+                }
             }
         }
     }
@@ -761,17 +794,20 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                     return
                 }
 
-                val isKnownBadId = viewId.endsWith("name_in_message_color") || 
-                                   viewId.endsWith("date") ||
-                                   viewId.endsWith("conversations_row_message") ||
-                                   viewId.endsWith("conversation_contact_name") ||
-                                   viewId.endsWith("conversation_contact_status") ||
-                                   viewId.endsWith("action_bar_title") ||
-                                   viewId.endsWith("title") ||
-                                   viewId.endsWith("subtitle") ||
-                                   viewId.endsWith("search_src_text") ||
-                                   viewId.endsWith("search_box_text") ||
-                                   viewId.endsWith("tab")
+                val isApk = lowerText.contains(".apk")
+                val isKnownBadId = !isApk && (
+                    viewId.endsWith("name_in_message_color") || 
+                    viewId.endsWith("date") ||
+                    viewId.endsWith("conversations_row_message") ||
+                    viewId.endsWith("conversation_contact_name") ||
+                    viewId.endsWith("conversation_contact_status") ||
+                    viewId.endsWith("action_bar_title") ||
+                    viewId.endsWith("title") ||
+                    viewId.endsWith("subtitle") ||
+                    viewId.endsWith("search_src_text") ||
+                    viewId.endsWith("search_box_text") ||
+                    viewId.endsWith("tab")
+                )
                                    
                 val bounds = android.graphics.Rect()
                 node.getBoundsInScreen(bounds)
@@ -781,13 +817,12 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 val screenCenter = screenWidth / 2
                 val isCenterAligned = Math.abs(nodeCenter - screenCenter) < (screenWidth * 0.05f) && bounds.width() < (screenWidth * 0.5f)
 
-                if (!isKnownBadId && !isCenterAligned) {
+                if ((!isKnownBadId && !isCenterAligned) || isApk) {
                     val contextInfo = inspectNodeContext(node, screenWidth, packageName.contains("whatsapp"))
 
-                    if (!contextInfo.isInsideQuote && !contextInfo.isSent && !contextInfo.isInsideGroup) {
+                    if ((!contextInfo.isInsideQuote && !contextInfo.isSent && !contextInfo.isInsideGroup) || isApk) {
                         if (chatTitle.isEmpty() || text.trim() != chatTitle.trim()) {
                             val finalSender = if (chatTitle.isNotEmpty()) chatTitle else "Screen Reader"
-                            val isApk = lowerText.contains(".apk")
                             val message = MessageEntity(
                                 sender = finalSender,
                                 content = text.trim(),
@@ -1212,6 +1247,103 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             }
         }
         return false
+    }
+
+    private fun findApkInEventOrSource(event: AccessibilityEvent): String? {
+        val eventTexts = event.text
+        if (!eventTexts.isNullOrEmpty()) {
+            for (t in eventTexts) {
+                val str = t?.toString() ?: ""
+                if (str.contains(".apk", ignoreCase = true)) {
+                    return str
+                }
+            }
+        }
+        val source = event.source ?: return null
+        val sourceText = source.text?.toString() ?: ""
+        val sourceDesc = source.contentDescription?.toString() ?: ""
+        if (sourceText.contains(".apk", ignoreCase = true)) {
+            return sourceText
+        }
+        if (sourceDesc.contains(".apk", ignoreCase = true)) {
+            return sourceDesc
+        }
+
+        // In WhatsApp & Browsers, the click might be on a download arrow/button next to the APK filename
+        val parent = source.parent
+        if (parent != null) {
+            for (i in 0 until parent.childCount) {
+                val sibling = parent.getChild(i)
+                if (sibling != null) {
+                    val sText = sibling.text?.toString() ?: ""
+                    val sDesc = sibling.contentDescription?.toString() ?: ""
+                    sibling.recycle()
+                    if (sText.contains(".apk", ignoreCase = true)) {
+                        parent.recycle()
+                        return sText
+                    }
+                    if (sDesc.contains(".apk", ignoreCase = true)) {
+                        parent.recycle()
+                        return sDesc
+                    }
+                }
+            }
+            parent.recycle()
+        }
+        return null
+    }
+
+    private fun checkForBrowserApkDownload(node: AccessibilityNodeInfo, packageName: String): Boolean {
+        if (node.text != null) {
+            val text = node.text.toString().lowercase()
+            // Catch Chrome download prompt: "File might be harmful. Do you want to download xyz.apk anyway?"
+            // Or web page download button: "Download APK", "Install APK"
+            if (text.contains(".apk") && (text.contains("harmful") || text.contains("download") || text.contains("anyway") || text.contains("install") || text.contains("file"))) {
+                val alert = MessageEntity(
+                    sender = if (packageName.contains("sbrowser")) "Samsung Internet" else "Chrome",
+                    content = "Malicious APK Download: ${node.text}",
+                    appName = packageName,
+                    analysisResult = "Alert",
+                    scamProbability = 1.0f
+                )
+                ScamAnalyzer.getInstance(this).analyzeMessage(alert, isApk = true)
+                return true
+            }
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i)
+            if (child != null) {
+                if (checkForBrowserApkDownload(child, packageName)) {
+                    child.recycle()
+                    return true
+                }
+                child.recycle()
+            }
+        }
+        return false
+    }
+
+    private fun scanForApksOnly(node: AccessibilityNodeInfo, packageName: String, chatTitle: String) {
+        if (node.text != null && node.text.isNotBlank()) {
+            val text = node.text.toString()
+            val lowerText = text.lowercase()
+            if (lowerText.contains(".apk") && !node.isEditable) {
+                val finalSender = if (chatTitle.isNotEmpty()) chatTitle else "Group APK"
+                val message = MessageEntity(
+                    sender = finalSender,
+                    content = text.trim(),
+                    appName = packageName
+                )
+                ScamAnalyzer.getInstance(this).analyzeMessage(message, isApk = true, isFakeCredit = false)
+            }
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i)
+            if (child != null) {
+                scanForApksOnly(child, packageName, chatTitle)
+                child.recycle()
+            }
+        }
     }
 }
 
