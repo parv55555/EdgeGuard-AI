@@ -21,6 +21,13 @@ class MessageReaderAccessibilityService : AccessibilityService() {
     private var lastBrowserJumpTime: Long = 0L
     private var lastDMJumpTagTime: Long = 0L
     private var lastPreInstallWarningTime: Long = 0L
+    private var lastScreenCheckTime: Long = 0L
+    private var cachedPackageName: String = ""
+    private var cachedChatTitle: String = ""
+    private var cachedIsActualChat: Boolean = false
+    private var cachedIsGroup: Boolean = false
+    private var cachedIsProfileScreen: Boolean = false
+    private var cachedIsNonChatScreen: Boolean = false
 
     companion object {
         var allowNextInstallUntilTime: Long = 0L
@@ -391,40 +398,40 @@ class MessageReaderAccessibilityService : AccessibilityService() {
         if (isWhatsApp || isTelegram || isSms) {
             val rootNode = rootInActiveWindow ?: return
             
-            // Best-effort extraction of the chat title (sender name)
-            var chatTitle = extractBestEffortChatTitle(rootNode, packageName)
+            val currentTime = System.currentTimeMillis()
+            val isWindowStateChange = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+            val shouldRefreshScreenState = isWindowStateChange || 
+                                           packageName != cachedPackageName || 
+                                           (currentTime - lastScreenCheckTime > 800L)
 
-            if (chatTitle.isNotEmpty() && isWhatsApp) {
-                // Temporal Linking: Check if there was a Chrome Booking Intent in the last 30 minutes
-                val prefs = getSharedPreferences("safetexts_prefs", android.content.Context.MODE_PRIVATE)
-                val intentTime = prefs.getLong("booking_intent_timestamp", 0L)
-                val currentTime = System.currentTimeMillis()
-                
-                if (intentTime > 0 && currentTime - intentTime < 30 * 60 * 1000) {
-                    // Link this chat to the booking context!
-                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                        val dao = AppDatabase.getDatabase(this@MessageReaderAccessibilityService).chatContextDao()
-                        dao.insertOrUpdate(ChatContextEntity(chatTitle, "BOOKING_SCAM_RISK", currentTime))
+            if (shouldRefreshScreenState) {
+                cachedPackageName = packageName
+                cachedChatTitle = extractBestEffortChatTitle(rootNode, packageName)
+                cachedIsActualChat = isChatScreen(rootNode, packageName)
+                cachedIsGroup = if (cachedIsActualChat) isGroupChat(rootNode, packageName, cachedChatTitle) else false
+                cachedIsProfileScreen = if (cachedIsActualChat) isProfileScreen(rootNode) else false
+                cachedIsNonChatScreen = cachedChatTitle.isNotEmpty() && NON_CHAT_TITLES.contains(cachedChatTitle.lowercase().trim())
+                lastScreenCheckTime = currentTime
+
+                if (cachedChatTitle.isNotEmpty() && isWhatsApp) {
+                    val prefs = getSharedPreferences("safetexts_prefs", android.content.Context.MODE_PRIVATE)
+                    val intentTime = prefs.getLong("booking_intent_timestamp", 0L)
+                    if (intentTime > 0 && currentTime - intentTime < 30 * 60 * 1000) {
+                        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                            val dao = AppDatabase.getDatabase(this@MessageReaderAccessibilityService).chatContextDao()
+                            dao.insertOrUpdate(ChatContextEntity(cachedChatTitle, "BOOKING_SCAM_RISK", currentTime))
+                        }
+                        prefs.edit().remove("booking_intent_timestamp").apply()
+                        Log.d("FunnelInterceptor", "Temporal Link: Chat '$cachedChatTitle' tagged as BOOKING_SCAM_RISK")
                     }
-                    // Clear intent so we don't tag every chat for the next 30 mins
-                    prefs.edit().remove("booking_intent_timestamp").apply()
-                    Log.d("FunnelInterceptor", "Temporal Link: Chat '$chatTitle' tagged as BOOKING_SCAM_RISK")
                 }
             }
 
-            // STRICT GATE: ONLY scan if we are confirmed to be inside an actual active chat conversation
-            val isActualChat = isChatScreen(rootNode, packageName)
-            val isGroup = isGroupChat(rootNode, packageName, chatTitle)
-            val isProfileScreen = isProfileScreen(rootNode)
-            val isNonChatScreen = chatTitle.isNotEmpty() && NON_CHAT_TITLES.contains(chatTitle.lowercase().trim())
-            
-            if (isActualChat && !isProfileScreen && !isNonChatScreen) {
-                if (isGroup) {
-                    // Privacy for WhatsApp/Telegram groups: strictly do not read chat messages or chatter,
-                    // but ALWAYS scan for dangerous .apk files to protect user from APK malware!
-                    scanForApksOnly(rootNode, packageName, chatTitle)
+            if (cachedIsActualChat && !cachedIsProfileScreen && !cachedIsNonChatScreen) {
+                if (cachedIsGroup) {
+                    scanForApksOnly(rootNode, packageName, cachedChatTitle)
                 } else {
-                    extractTextFromNode(rootNode, packageName, chatTitle)
+                    extractTextFromNode(rootNode, packageName, cachedChatTitle)
                 }
             }
         }
@@ -693,25 +700,26 @@ class MessageReaderAccessibilityService : AccessibilityService() {
     )
 
     private fun inspectNodeContext(node: AccessibilityNodeInfo, screenWidth: Int, isWhatsApp: Boolean): NodeScanContext {
+        val nodeBounds = android.graphics.Rect()
+        node.getBoundsInScreen(nodeBounds)
+
+        // Ultra-fast geometry sent detection: In WhatsApp & SMS, user's sent messages are right-aligned.
+        // If detected as sent by geometry, exit instantly (0ms) without any Binder IPC parent traversals!
+        if (screenWidth > 0 && nodeBounds.width() > 0) {
+            val distanceToLeft = nodeBounds.left
+            val distanceToRight = screenWidth - nodeBounds.right
+            if (distanceToRight < distanceToLeft - (screenWidth * 0.05f) && distanceToRight <= (screenWidth * 0.30f)) {
+                return NodeScanContext(isInsideQuote = false, isSent = true, isInsideGroup = false)
+            }
+        }
+
         var isQuote = false
         var isSent = false
         var isGroup = false
         var current: AccessibilityNodeInfo? = node
         var count = 0
 
-        val nodeBounds = android.graphics.Rect()
-        node.getBoundsInScreen(nodeBounds)
-
-        // Ultra-fast geometry sent detection: In WhatsApp & SMS, user's sent messages are right-aligned
-        if (screenWidth > 0 && nodeBounds.width() > 0) {
-            val distanceToLeft = nodeBounds.left
-            val distanceToRight = screenWidth - nodeBounds.right
-            if (distanceToRight < distanceToLeft - (screenWidth * 0.05f) && distanceToRight <= (screenWidth * 0.30f)) {
-                isSent = true
-            }
-        }
-
-        while (current != null && count < 10) {
+        while (current != null && count < 5) {
             val viewId = current.viewIdResourceName?.lowercase() ?: ""
             if (viewId.contains("quote") || viewId.contains("reply")) {
                 isQuote = true
@@ -723,11 +731,11 @@ class MessageReaderAccessibilityService : AccessibilityService() {
 
             val contentDesc = current.contentDescription?.toString()?.lowercase() ?: ""
             if (contentDesc.startsWith("you:") || contentDesc.contains("you: ")) {
-                isSent = true
+                return NodeScanContext(isInsideQuote = isQuote, isSent = true, isInsideGroup = isGroup)
             }
 
             // Check if current node is a bubble container that has a sender name child (name_in_message_color)
-            if (isWhatsApp && !isGroup && count <= 3) {
+            if (isWhatsApp && !isGroup && count <= 2) {
                 for (c in 0 until current.childCount) {
                     val child = current.getChild(c)
                     if (child != null) {

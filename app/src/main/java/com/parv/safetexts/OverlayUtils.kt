@@ -33,51 +33,58 @@ object OverlayUtils {
             return
         }
 
-        Handler(Looper.getMainLooper()).post {
+        val showAction = {
             try {
-                if (isOverlayShowing) return@post
-                val windowManager = appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                if (!isOverlayShowing) {
+                    val windowManager = appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
-                val rootLayout = FrameLayout(appContext).apply {
-                    setBackgroundColor(Color.parseColor("#99000000")) // Semi-transparent dim background
-                    setPadding(40, 60, 40, 60)
-                    setOnClickListener { dismissOverlay(appContext) }
+                    val rootLayout = FrameLayout(appContext).apply {
+                        setBackgroundColor(Color.parseColor("#99000000")) // Semi-transparent dim background
+                        setPadding(40, 60, 40, 60)
+                        setOnClickListener { dismissOverlay(appContext) }
+                    }
+
+                    val card = cardBuilder(appContext) { dismissOverlay(appContext) }
+                    card.setOnClickListener { /* prevent dismissal on card click */ }
+
+                    val cardParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        gravity = Gravity.CENTER
+                    }
+                    rootLayout.addView(card, cardParams)
+
+                    val layoutParams = WindowManager.LayoutParams(
+                        WindowManager.LayoutParams.MATCH_PARENT,
+                        WindowManager.LayoutParams.MATCH_PARENT,
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                        else
+                            @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                        WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED,
+                        PixelFormat.TRANSLUCENT
+                    ).apply {
+                        gravity = Gravity.CENTER
+                    }
+
+                    windowManager.addView(rootLayout, layoutParams)
+                    currentOverlayView = rootLayout
+                    isOverlayShowing = true
+                    Log.d("OverlayUtils", "System WindowManager overlay displayed successfully!")
                 }
-
-                val card = cardBuilder(appContext) { dismissOverlay(appContext) }
-                card.setOnClickListener { /* prevent dismissal on card click */ }
-
-                val cardParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    gravity = Gravity.CENTER
-                }
-                rootLayout.addView(card, cardParams)
-
-                val layoutParams = WindowManager.LayoutParams(
-                    WindowManager.LayoutParams.MATCH_PARENT,
-                    WindowManager.LayoutParams.MATCH_PARENT,
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                    else
-                        @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED,
-                    PixelFormat.TRANSLUCENT
-                ).apply {
-                    gravity = Gravity.CENTER
-                }
-
-                windowManager.addView(rootLayout, layoutParams)
-                currentOverlayView = rootLayout
-                isOverlayShowing = true
-                Log.d("OverlayUtils", "System WindowManager overlay displayed successfully!")
             } catch (e: Exception) {
                 Log.e("OverlayUtils", "Failed to add WindowManager overlay: ${e.message}", e)
                 isOverlayShowing = false
             }
+        }
+
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            showAction()
+        } else {
+            Handler(Looper.getMainLooper()).post(showAction)
         }
     }
 

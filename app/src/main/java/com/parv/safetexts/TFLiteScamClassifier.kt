@@ -70,9 +70,10 @@ class TFLiteScamClassifier(private val context: Context) {
             val numCores = Runtime.getRuntime().availableProcessors().coerceIn(2, 4)
             val options = Interpreter.Options().apply {
                 setNumThreads(numCores)
+                setUseXNNPACK(true)
             }
             interpreter = Interpreter(buffer, options)
-            Log.d("TFLiteScamClassifier", "Model loaded successfully with $numCores threads")
+            Log.d("TFLiteScamClassifier", "Model loaded successfully with $numCores threads and XNNPACK acceleration")
         } catch (e: Exception) {
             Log.e("TFLiteScamClassifier", "Error loading model: ${e.message}")
         }
@@ -88,6 +89,13 @@ class TFLiteScamClassifier(private val context: Context) {
         for (word in words) {
             if (word.isEmpty()) continue
             if (tokens.size >= maxLen - 1) break
+
+            // Ultra-fast path: whole-word match in vocab avoids subword string slicing completely
+            val wholeMatch = vocab[word]
+            if (wholeMatch != null) {
+                tokens.add(wholeMatch)
+                continue
+            }
 
             var start = 0
             var isBad = false
