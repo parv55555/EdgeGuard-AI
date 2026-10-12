@@ -399,14 +399,16 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             val rootNode = rootInActiveWindow ?: return
             
             val currentTime = System.currentTimeMillis()
+            val currentChatTitle = extractBestEffortChatTitle(rootNode, packageName)
             val isWindowStateChange = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             val shouldRefreshScreenState = isWindowStateChange || 
                                            packageName != cachedPackageName || 
-                                           (currentTime - lastScreenCheckTime > 800L)
+                                           currentChatTitle != cachedChatTitle ||
+                                           (currentTime - lastScreenCheckTime > 500L)
 
             if (shouldRefreshScreenState) {
                 cachedPackageName = packageName
-                cachedChatTitle = extractBestEffortChatTitle(rootNode, packageName)
+                cachedChatTitle = currentChatTitle
                 cachedIsActualChat = isChatScreen(rootNode, packageName)
                 cachedIsGroup = if (cachedIsActualChat) isGroupChat(rootNode, packageName, cachedChatTitle) else false
                 cachedIsProfileScreen = if (cachedIsActualChat) isProfileScreen(rootNode) else false
@@ -427,8 +429,37 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 }
             }
 
+            // INSTANT GROUP OVERRIDE FOR WHATSAPP:
+            // If we are in WhatsApp and screen is an actual chat, check if any group indicators are visible right now.
+            var isGroup = cachedIsGroup
+            if (isWhatsApp && cachedIsActualChat && !isGroup) {
+                // If any message bubble on screen has a sender name (name_in_message_color), it is 100% a group chat!
+                val senderNameNodes = rootNode.findAccessibilityNodeInfosByViewId("com.whatsapp:id/name_in_message_color")
+                if (!senderNameNodes.isNullOrEmpty()) {
+                    senderNameNodes.forEach { it.recycle() }
+                    cachedIsGroup = true
+                    isGroup = true
+                } else {
+                    val subNodes = rootNode.findAccessibilityNodeInfosByViewId("com.whatsapp:id/conversation_contact_status")
+                    if (!subNodes.isNullOrEmpty()) {
+                        for (sub in subNodes) {
+                            val subText = sub.text?.toString()?.lowercase()?.trim() ?: ""
+                            if (subText.contains(",") || subText.contains("group") || subText.contains("participants") ||
+                                subText.contains("members") || subText.contains("community") || subText.contains("channel") ||
+                                subText.contains("tap here for group") || subText.startsWith("you,")) {
+                                isGroup = true
+                                cachedIsGroup = true
+                                break
+                            }
+                        }
+                        subNodes.forEach { it.recycle() }
+                    }
+                }
+            }
+
             if (cachedIsActualChat && !cachedIsProfileScreen && !cachedIsNonChatScreen) {
-                if (cachedIsGroup) {
+                if (isGroup) {
+                    // WhatsApp & Telegram groups: ONLY scan for malicious .apk files, NEVER read or alert on chat text!
                     scanForApksOnly(rootNode, packageName, cachedChatTitle)
                 } else {
                     extractTextFromNode(rootNode, packageName, cachedChatTitle)
@@ -735,7 +766,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             }
 
             // Check if current node is a bubble container that has a sender name child (name_in_message_color)
-            if (isWhatsApp && !isGroup && count <= 2) {
+            if (isWhatsApp && !isGroup && count <= 3) {
                 for (c in 0 until current.childCount) {
                     val child = current.getChild(c)
                     if (child != null) {
@@ -830,10 +861,17 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 val screenCenter = screenWidth / 2
                 val isCenterAligned = Math.abs(nodeCenter - screenCenter) < (screenWidth * 0.05f) && bounds.width() < (screenWidth * 0.5f)
 
-                if ((!isKnownBadId && !isCenterAligned) || isApk || isFakeCredit) {
+                if ((!isKnownBadId && !isCenterAligned) || isApk) {
                     val contextInfo = inspectNodeContext(node, screenWidth, packageName.contains("whatsapp"))
 
-                    if ((!contextInfo.isInsideQuote && !contextInfo.isSent && !contextInfo.isInsideGroup) || isApk || isFakeCredit) {
+                    // STRICT WHATSAPP GROUP PROTECTION:
+                    // NEVER scan, analyze, or alert on group chat messages!
+                    // Only dangerous .apk file downloads are allowed to alert.
+                    if (contextInfo.isInsideGroup && !isApk) {
+                        return
+                    }
+
+                    if (!contextInfo.isInsideQuote && !contextInfo.isSent && (!contextInfo.isInsideGroup || isApk)) {
                         if (chatTitle.isEmpty() || text.trim() != chatTitle.trim()) {
                             val finalSender = if (chatTitle.isNotEmpty()) chatTitle else "Screen Reader"
                             val message = MessageEntity(
@@ -841,7 +879,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                                 content = text.trim(),
                                 appName = packageName
                             )
-                            ScamAnalyzer.getInstance(this).analyzeMessage(message, isApk = isApk, isFakeCredit = isFakeCredit)
+                            ScamAnalyzer.getInstance(this).analyzeMessage(message, isApk = isApk, isFakeCredit = if (contextInfo.isInsideGroup) false else isFakeCredit)
                         }
                     }
                 }
