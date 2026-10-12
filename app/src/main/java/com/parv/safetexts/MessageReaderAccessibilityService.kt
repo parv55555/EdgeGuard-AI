@@ -26,9 +26,11 @@ class MessageReaderAccessibilityService : AccessibilityService() {
     private var cachedChatTitle: String = ""
     private var cachedIsActualChat: Boolean = false
     private var cachedIsGroup: Boolean = false
+    private var cachedIsVerifiedAccount: Boolean = false
     private var cachedIsProfileScreen: Boolean = false
     private var cachedIsNonChatScreen: Boolean = false
     private val knownGroupTitles = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val knownVerifiedAccounts = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     companion object {
         var allowNextInstallUntilTime: Long = 0L
@@ -94,11 +96,11 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
             
             // LAYER 1: Pre-Install Shield for Malicious APKs
-            val isPackageInstaller = packageName.contains("packageinstaller") ||
-                                     packageName == "android" ||
-                                     packageName == "com.sec.android.app.myfiles" ||
-                                     packageName == "com.coloros.safecenter" ||
-                                     packageName == "com.oplus.appmanager"
+            // CRITICAL: Only match actual system package installers!
+            // NEVER include "android" (system resolver / open-with sheet) or MyFiles or document viewers!
+            val isPackageInstaller = packageName.contains("packageinstaller") &&
+                                     packageName != "android" &&
+                                     !packageName.contains("myfiles")
 
             if (isPackageInstaller) {
                 val rootNode = rootInActiveWindow
@@ -437,6 +439,25 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                     cachedIsGroup = false
                 }
 
+                // Check if this chat title was already verified as a verified blue-tick account:
+                val isKnownVerified = (currentChatTitle.isNotEmpty() && knownVerifiedAccounts.contains(currentChatTitle)) ||
+                                      (cachedChatTitle.isNotEmpty() && knownVerifiedAccounts.contains(cachedChatTitle))
+
+                if (isKnownVerified) {
+                    cachedIsVerifiedAccount = true
+                } else if (cachedIsActualChat && isWhatsApp) {
+                    val detectedVerified = isVerifiedWhatsAppAccount(rootNode, cachedChatTitle.ifEmpty { currentChatTitle })
+                    if (detectedVerified) {
+                        cachedIsVerifiedAccount = true
+                        if (cachedChatTitle.isNotEmpty()) knownVerifiedAccounts.add(cachedChatTitle)
+                        if (currentChatTitle.isNotEmpty()) knownVerifiedAccounts.add(currentChatTitle)
+                    } else if (isTitleChanged || isPackageChanged) {
+                        cachedIsVerifiedAccount = false
+                    }
+                } else {
+                    cachedIsVerifiedAccount = false
+                }
+
                 cachedIsProfileScreen = if (cachedIsActualChat) isProfileScreen(rootNode) else false
                 cachedIsNonChatScreen = cachedChatTitle.isNotEmpty() && NON_CHAT_TITLES.contains(cachedChatTitle.lowercase().trim())
                 lastScreenCheckTime = currentTime
@@ -455,9 +476,22 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 }
             }
 
+            // Real-time WhatsApp verified account detection safety check:
+            var isVerified = cachedIsVerifiedAccount || 
+                             (cachedChatTitle.isNotEmpty() && knownVerifiedAccounts.contains(cachedChatTitle)) ||
+                             (currentChatTitle.isNotEmpty() && knownVerifiedAccounts.contains(currentChatTitle))
+            if (isWhatsApp && cachedIsActualChat && !isVerified) {
+                if (isVerifiedWhatsAppAccount(rootNode, cachedChatTitle.ifEmpty { currentChatTitle })) {
+                    isVerified = true
+                    cachedIsVerifiedAccount = true
+                    if (cachedChatTitle.isNotEmpty()) knownVerifiedAccounts.add(cachedChatTitle)
+                    if (currentChatTitle.isNotEmpty()) knownVerifiedAccounts.add(currentChatTitle)
+                }
+            }
+
             // Real-time WhatsApp group detection safety check:
             var isGroup = cachedIsGroup || (cachedChatTitle.isNotEmpty() && knownGroupTitles.contains(cachedChatTitle))
-            if (isWhatsApp && cachedIsActualChat && !isGroup) {
+            if (isWhatsApp && cachedIsActualChat && !isGroup && !isVerified) {
                 if (isGroupChat(rootNode, packageName, cachedChatTitle)) {
                     isGroup = true
                     cachedIsGroup = true
@@ -466,7 +500,10 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             }
 
             if (cachedIsActualChat && !cachedIsProfileScreen && !cachedIsNonChatScreen) {
-                if (isGroup) {
+                if (isVerified) {
+                    // VERIFIED BLUE TICK ACCOUNT: DO NOT SCAN AT ALL!
+                    Log.d("MessageReader", "Skipping verified WhatsApp account: '$cachedChatTitle'")
+                } else if (isGroup) {
                     // WhatsApp & Telegram groups: ONLY scan for malicious .apk files, NEVER read or alert on chat text!
                     scanForApksOnly(rootNode, packageName, cachedChatTitle)
                 } else {
@@ -671,6 +708,86 @@ class MessageReaderAccessibilityService : AccessibilityService() {
         return false
     }
 
+    private fun isVerifiedWhatsAppAccount(rootNode: AccessibilityNodeInfo, chatTitle: String): Boolean {
+        // 1. Check known verified accounts set
+        if (chatTitle.isNotEmpty() && knownVerifiedAccounts.contains(chatTitle)) {
+            return true
+        }
+
+        // 2. Check toolbar subtitle for "official business account" or "verified business"
+        val subtitleIds = listOf(
+            "com.whatsapp:id/conversation_contact_status",
+            "com.whatsapp.w4b:id/conversation_contact_status"
+        )
+        for (id in subtitleIds) {
+            val subtitles = rootNode.findAccessibilityNodeInfosByViewId(id)
+            if (!subtitles.isNullOrEmpty()) {
+                for (sub in subtitles) {
+                    val text = sub.text?.toString()?.lowercase()?.trim() ?: ""
+                    val desc = sub.contentDescription?.toString()?.lowercase()?.trim() ?: ""
+                    if (text.contains("official business account") || text.contains("verified business") ||
+                        desc.contains("official business account") || desc.contains("verified business")) {
+                        subtitles.forEach { it.recycle() }
+                        return true
+                    }
+                }
+                subtitles.forEach { it.recycle() }
+            }
+        }
+
+        // 3. Check for verified badge views in toolbar
+        val badgeIds = listOf(
+            "com.whatsapp:id/verified_badge",
+            "com.whatsapp.w4b:id/verified_badge",
+            "com.whatsapp:id/w4b_verified_badge",
+            "com.whatsapp:id/official_badge",
+            "com.whatsapp.w4b:id/official_badge",
+            "com.whatsapp:id/verified_icon",
+            "com.whatsapp.w4b:id/verified_icon"
+        )
+        for (id in badgeIds) {
+            val badgeNodes = rootNode.findAccessibilityNodeInfosByViewId(id)
+            if (!badgeNodes.isNullOrEmpty()) {
+                badgeNodes.forEach { it.recycle() }
+                return true
+            }
+        }
+
+        // 4. Recursive inspection of toolbar / header for verified content descriptions or official business text
+        return scanForVerifiedBadge(rootNode)
+    }
+
+    private fun scanForVerifiedBadge(node: AccessibilityNodeInfo, depth: Int = 0): Boolean {
+        if (depth > 12) return false
+
+        val desc = node.contentDescription?.toString()?.lowercase()?.trim() ?: ""
+        if (desc.contains("verified") || desc.contains("official business account") || desc.contains("official business")) {
+            return true
+        }
+
+        val text = node.text?.toString()?.lowercase()?.trim() ?: ""
+        if (text.contains("official business account") || text.contains("this is an official business account") || text.contains("verified business account")) {
+            return true
+        }
+
+        val viewId = node.viewIdResourceName?.lowercase() ?: ""
+        if (viewId.contains("verified") || viewId.contains("official_badge")) {
+            return true
+        }
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i)
+            if (child != null) {
+                if (scanForVerifiedBadge(child, depth + 1)) {
+                    child.recycle()
+                    return true
+                }
+                child.recycle()
+            }
+        }
+        return false
+    }
+
     private fun isChatScreen(node: AccessibilityNodeInfo, packageName: String = ""): Boolean {
         if (packageName.contains("whatsapp")) {
             val whatsappChatIndicators = listOf(
@@ -866,6 +983,12 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 
                 val viewId = node.viewIdResourceName ?: ""
                 if (packageName.contains("whatsapp")) {
+                    // Strict verified account exclusion: NEVER read messages from verified accounts!
+                    val isVerifiedChat = cachedIsVerifiedAccount || (chatTitle.isNotEmpty() && knownVerifiedAccounts.contains(chatTitle))
+                    if (isVerifiedChat) {
+                        return
+                    }
+
                     // 1. If text starts with ~, it is a member sender name in a group!
                     if (cleanText.startsWith("~") || viewId.endsWith("name_in_message_color")) {
                         cachedIsGroup = true
@@ -881,6 +1004,22 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 }
 
                 val isApk = lowerText.contains(".apk")
+
+                // Ignore document file attachment metadata (PDF names, page counts, slide counts, file sizes)
+                val isDocMetadata = lowerText.endsWith(".pdf") || 
+                                    lowerText.endsWith(".docx") || 
+                                    lowerText.endsWith(".doc") || 
+                                    lowerText.endsWith(".xlsx") || 
+                                    lowerText.endsWith(".xls") || 
+                                    lowerText.endsWith(".pptx") || 
+                                    lowerText.endsWith(".ppt") || 
+                                    lowerText.endsWith(".txt") ||
+                                    cleanText.matches(Regex("""^\d+(\.\d+)?\s*(kb|mb|gb|b|bytes)$""", RegexOption.IGNORE_CASE)) ||
+                                    cleanText.matches(Regex("""^\d+\s*(pages?|slides?|sheets?)$""", RegexOption.IGNORE_CASE)) ||
+                                    cleanText == "•" || cleanText == "·"
+                if (isDocMetadata && !isApk) {
+                    return
+                }
                 val isFakeCredit = (packageName.contains("whatsapp") || packageName.contains("telegram")) &&
                     (lowerText.contains("credited") || lowerText.contains("received") || lowerText.contains("successful") || lowerText.contains("debited")) &&
                     (lowerText.contains("rs") || lowerText.contains("inr") || lowerText.contains("₹") || lowerText.contains("amount")) &&
@@ -982,8 +1121,20 @@ class MessageReaderAccessibilityService : AccessibilityService() {
         val text = node.text?.toString()?.lowercase() ?: ""
         val desc = node.contentDescription?.toString()?.lowercase() ?: ""
         
-        if (text.contains("install") || desc.contains("install") || 
-            text.contains("update") || desc.contains("update")) {
+        // Specific package installer prompts
+        if (text.contains("do you want to install this app") ||
+            text.contains("do you want to install this application") ||
+            text.contains("do you want to install an update") ||
+            text.contains("install unknown apps") ||
+            desc.contains("do you want to install this app") ||
+            desc.contains("do you want to install this application")) {
+            return true
+        }
+
+        // Action button with exact "Install" or "Update" on a package installer screen
+        val isExactInstallButton = (node.isClickable || node.className?.contains("Button") == true) &&
+            (text == "install" || text == "update" || desc == "install" || desc == "update")
+        if (isExactInstallButton) {
             return true
         }
         
@@ -1352,6 +1503,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
         if (!eventTexts.isNullOrEmpty()) {
             for (t in eventTexts) {
                 val str = t?.toString() ?: ""
+                if (isNonApkDocument(str)) return null
                 if (str.contains(".apk", ignoreCase = true)) {
                     return str
                 }
@@ -1360,6 +1512,11 @@ class MessageReaderAccessibilityService : AccessibilityService() {
         val source = event.source ?: return null
         val sourceText = source.text?.toString() ?: ""
         val sourceDesc = source.contentDescription?.toString() ?: ""
+
+        if (isNonApkDocument(sourceText) || isNonApkDocument(sourceDesc)) {
+            return null
+        }
+
         if (sourceText.contains(".apk", ignoreCase = true)) {
             return sourceText
         }
@@ -1376,6 +1533,10 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                     val sText = sibling.text?.toString() ?: ""
                     val sDesc = sibling.contentDescription?.toString() ?: ""
                     sibling.recycle()
+                    if (isNonApkDocument(sText) || isNonApkDocument(sDesc)) {
+                        parent.recycle()
+                        return null
+                    }
                     if (sText.contains(".apk", ignoreCase = true)) {
                         parent.recycle()
                         return sText
@@ -1389,6 +1550,17 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             parent.recycle()
         }
         return null
+    }
+
+    private fun isNonApkDocument(text: String): Boolean {
+        if (text.isBlank()) return false
+        val lower = text.lowercase()
+        val isNonApk = lower.contains(".pdf") || lower.contains(".docx") || lower.contains(".doc") ||
+                       lower.contains(".xlsx") || lower.contains(".xls") || lower.contains(".pptx") ||
+                       lower.contains(".ppt") || lower.contains(".txt") || lower.contains(".jpg") ||
+                       lower.contains(".jpeg") || lower.contains(".png") || lower.contains(".mp3") ||
+                       lower.contains(".mp4") || lower.contains(".zip") || lower.contains(".rar")
+        return isNonApk && !lower.contains(".apk")
     }
 
     private fun checkForBrowserApkDownload(node: AccessibilityNodeInfo, packageName: String): Boolean {
