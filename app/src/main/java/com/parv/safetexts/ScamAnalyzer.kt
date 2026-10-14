@@ -64,6 +64,63 @@ class ScamAnalyzer private constructor(private val context: Context) {
                 instance ?: ScamAnalyzer(context.applicationContext).also { instance = it }
             }
         }
+
+        fun checkFastDeterministicScam(text: String): Pair<String, Float>? {
+            val lower = text.lowercase()
+            // 1. APK files
+            if (lower.contains(".apk")) {
+                return Pair("Alert", 1.0f)
+            }
+            // 2. Electricity bill disconnection scam
+            if ((lower.contains("electricity") || lower.contains("bijli") || lower.contains("power")) &&
+                (lower.contains("disconnect") || lower.contains("cut") || lower.contains("bill") || lower.contains("tonight") || lower.contains("9:30") || lower.contains("unpaid"))) {
+                return Pair("Alert", 0.98f)
+            }
+            // 3. Bank / PAN / KYC Block scam
+            if ((lower.contains("kyc") || lower.contains("pan card") || lower.contains("pancard") || lower.contains("aadhaar") || lower.contains("account") || lower.contains("debit card") || lower.contains("sim card") || lower.contains("sim block") || lower.contains("yono") || lower.contains("sbi")) &&
+                (lower.contains("block") || lower.contains("suspend") || lower.contains("update immediately") || lower.contains("deactivate") || lower.contains("expire") || lower.contains("click here") || lower.contains("update your"))) {
+                return Pair("Alert", 0.97f)
+            }
+            // 4. Fake Lottery / KBC / Prize
+            if ((lower.contains("kbc") || lower.contains("lottery") || lower.contains("congratulations") || lower.contains("prize") || lower.contains("winner")) &&
+                (lower.contains("lakh") || lower.contains("crore") || lower.contains("won") || lower.contains("claim") || lower.contains("lucky"))) {
+                return Pair("Alert", 0.96f)
+            }
+            // 5. Fake Job / YouTube task
+            if ((lower.contains("part time") || lower.contains("daily income") || lower.contains("youtube") || lower.contains("like and subscribe") || lower.contains("telegram")) &&
+                (lower.contains("per day") || lower.contains("earn") || lower.contains("salary") || lower.contains("daily") || lower.contains("rs.") || lower.contains("inr") || lower.contains("work from home"))) {
+                return Pair("Alert", 0.95f)
+            }
+            // 6. Fake Traffic Challan
+            if ((lower.contains("challan") || lower.contains("echallan") || lower.contains("traffic")) &&
+                (lower.contains("pay") || lower.contains("court") || lower.contains(".apk") || lower.contains("fine") || lower.contains("vehicle"))) {
+                return Pair("Alert", 0.95f)
+            }
+            // 7. Sextortion / Digital Arrest
+            if ((lower.contains("cbi") || lower.contains("narcotics") || lower.contains("cyber crime") || lower.contains("police") || lower.contains("digital arrest")) &&
+                (lower.contains("warrant") || lower.contains("arrest") || lower.contains("illegal") || lower.contains("court") || lower.contains("summon") || lower.contains("case file"))) {
+                return Pair("Alert", 0.99f)
+            }
+            // 8. India Post / Courier delivery address update scam
+            if ((lower.contains("india post") || lower.contains("post office") || lower.contains("courier") || lower.contains("parcel") || lower.contains("shipment") || lower.contains("package") || lower.contains("delivery")) &&
+                (lower.contains("address") || lower.contains("failed") || lower.contains("suspend") || lower.contains("update") || lower.contains("reschedule") || lower.contains("undelivered"))) {
+                return Pair("Alert", 0.96f)
+            }
+            // 9. Remote access tools / OTP fraud
+            if ((lower.contains("anydesk") || lower.contains("teamviewer") || lower.contains("quicksupport") || lower.contains("rustdesk")) ||
+                ((lower.contains("otp") || lower.contains("one time password") || lower.contains("verification code")) &&
+                 (lower.contains("share") || lower.contains("forward") || lower.contains("send to") || lower.contains("tell me")) &&
+                 (!lower.contains("do not share") && !lower.contains("never share") && !lower.contains("don't share") && !lower.contains("dont share")))) {
+                return Pair("Alert", 0.98f)
+            }
+            // 10. Pre-approved loan / refund scam
+            if ((lower.contains("loan") || lower.contains("refund") || lower.contains("credit card limit") || lower.contains("cashback")) &&
+                (lower.contains("pre-approved") || lower.contains("approved") || lower.contains("credited") || lower.contains("claim now") || lower.contains("apply now")) &&
+                (lower.contains("link") || lower.contains("http") || lower.contains("bit.ly") || lower.contains("click"))) {
+                return Pair("Alert", 0.95f)
+            }
+            return null
+        }
     }
 
     private fun createNotificationChannel() {
@@ -229,67 +286,12 @@ class ScamAnalyzer private constructor(private val context: Context) {
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle("⚠️ SCAM WARNING: ${message.sender}")
             .setContentText("Potential scam intercepted from ${message.sender}")
-            .setStyle(Notification.BigTextStyle().bigText("SafeConvos intercepted a potential scam from ${message.sender} (${message.appName}). Open SafeConvos to view details."))
+            .setStyle(Notification.BigTextStyle().bigText("EdgeGuard AI intercepted a potential scam from ${message.sender} (${message.appName}). Open EdgeGuard AI to view details."))
             .setPriority(Notification.PRIORITY_HIGH)
             .setDefaults(Notification.DEFAULT_ALL)
             .setAutoCancel(true)
             .build()
 
         notificationManager.notify(message.id, notification)
-    }
-
-    private fun checkFastDeterministicScam(text: String): Pair<String, Float>? {
-        val lower = text.lowercase()
-        // 1. APK files
-        if (lower.contains(".apk")) {
-            return Pair("Alert", 1.0f)
-        }
-        // 2. Electricity bill disconnection scam
-        if ((lower.contains("electricity") || lower.contains("bijli") || lower.contains("power")) &&
-            (lower.contains("disconnect") || lower.contains("cut") || lower.contains("bill") || lower.contains("tonight") || lower.contains("9:30") || lower.contains("unpaid"))) {
-            return Pair("Alert", 0.98f)
-        }
-        // 3. Bank / PAN / KYC Block scam
-        if ((lower.contains("kyc") || lower.contains("pan card") || lower.contains("pancard") || lower.contains("aadhaar") || lower.contains("account") || lower.contains("debit card") || lower.contains("sim card") || lower.contains("sim block") || lower.contains("yono") || lower.contains("sbi")) &&
-            (lower.contains("block") || lower.contains("suspend") || lower.contains("update immediately") || lower.contains("deactivate") || lower.contains("expire") || lower.contains("click here") || lower.contains("update your"))) {
-            return Pair("Alert", 0.97f)
-        }
-        // 4. Fake Lottery / KBC / Prize
-        if ((lower.contains("kbc") || lower.contains("lottery") || lower.contains("congratulations") || lower.contains("prize") || lower.contains("winner")) &&
-            (lower.contains("lakh") || lower.contains("crore") || lower.contains("won") || lower.contains("claim") || lower.contains("lucky"))) {
-            return Pair("Alert", 0.96f)
-        }
-        // 5. Fake Job / YouTube task
-        if ((lower.contains("part time") || lower.contains("daily income") || lower.contains("youtube") || lower.contains("like and subscribe") || lower.contains("telegram")) &&
-            (lower.contains("per day") || lower.contains("earn") || lower.contains("salary") || lower.contains("daily") || lower.contains("rs.") || lower.contains("inr") || lower.contains("work from home"))) {
-            return Pair("Alert", 0.95f)
-        }
-        // 6. Fake Traffic Challan
-        if ((lower.contains("challan") || lower.contains("echallan") || lower.contains("traffic")) &&
-            (lower.contains("pay") || lower.contains("court") || lower.contains(".apk") || lower.contains("fine") || lower.contains("vehicle"))) {
-            return Pair("Alert", 0.95f)
-        }
-        // 7. Sextortion / Digital Arrest
-        if ((lower.contains("cbi") || lower.contains("narcotics") || lower.contains("cyber crime") || lower.contains("police") || lower.contains("digital arrest")) &&
-            (lower.contains("warrant") || lower.contains("arrest") || lower.contains("illegal") || lower.contains("court") || lower.contains("summon") || lower.contains("case file"))) {
-            return Pair("Alert", 0.99f)
-        }
-        // 8. India Post / Courier delivery address update scam
-        if ((lower.contains("india post") || lower.contains("post office") || lower.contains("courier") || lower.contains("parcel") || lower.contains("shipment") || lower.contains("package") || lower.contains("delivery")) &&
-            (lower.contains("address") || lower.contains("failed") || lower.contains("suspend") || lower.contains("update") || lower.contains("reschedule") || lower.contains("undelivered"))) {
-            return Pair("Alert", 0.96f)
-        }
-        // 9. Remote access tools / OTP fraud
-        if ((lower.contains("anydesk") || lower.contains("teamviewer") || lower.contains("quicksupport") || lower.contains("rustdesk")) ||
-            ((lower.contains("otp") || lower.contains("one time password") || lower.contains("verification code")) && (lower.contains("share") || lower.contains("forward") || lower.contains("send to") || lower.contains("tell me")))) {
-            return Pair("Alert", 0.98f)
-        }
-        // 10. Pre-approved loan / refund scam
-        if ((lower.contains("loan") || lower.contains("refund") || lower.contains("credit card limit") || lower.contains("cashback")) &&
-            (lower.contains("pre-approved") || lower.contains("approved") || lower.contains("credited") || lower.contains("claim now") || lower.contains("apply now")) &&
-            (lower.contains("link") || lower.contains("http") || lower.contains("bit.ly") || lower.contains("click"))) {
-            return Pair("Alert", 0.95f)
-        }
-        return null
     }
 }
