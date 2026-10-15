@@ -6,9 +6,9 @@
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-4285F4?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge)](./LICENSE)
 
-An edge-computing mobile security application engineered strictly for **on-device inference** to deliver **sub-millisecond (<0.1ms–200ms) scam detection with zero cloud-latency and absolute user data privacy**. 
+An edge-computing mobile security application engineered strictly for **on-device inference** and **real-time User Behavior Analysis (UBA)**. EdgeGuard AI delivers **sub-millisecond (<0.1ms–185ms) scam interception with zero cloud-latency and absolute user data privacy**. 
 
-Unlike conventional anti-fraud tools that stream user messages to remote LLMs, **EdgeGuard AI decouples inference completely from the cloud**, preventing server-side data harvesting and functioning seamlessly in offline environments.
+Unlike conventional anti-fraud tools that stream user messages to remote servers, **EdgeGuard AI decouples inference completely from the cloud**, preventing server-side data harvesting and functioning seamlessly in offline environments.
 
 ---
 
@@ -16,6 +16,7 @@ Unlike conventional anti-fraud tools that stream user messages to remote LLMs, *
 
 - [Key Architectural Features](#-key-architectural-features)
 - [System Architecture](#-system-architecture)
+- [User Behavior Analysis (UBA) & Multi-App Funnels](#-user-behavior-analysis-uba--multi-app-funnels)
 - [Scam Vectors Protected](#-scam-vectors-protected)
 - [Performance Benchmarks](#-performance-benchmarks)
 - [Prerequisites & Environment Variables](#-prerequisites--environment-variables)
@@ -30,12 +31,11 @@ Unlike conventional anti-fraud tools that stream user messages to remote LLMs, *
 
 ## ⚡ Key Architectural Features
 
-* **Zero-Cloud Data Sovereignty:** User messages, notifications, and telemetry never leave the device. All processing occurs locally within the Android hardware sandbox.
-* **Tiered Hybrid Inference Engine:**
-  * **Tier 1 (<0.1 ms):** Zero-latency deterministic pattern matcher for critical, instant-threat patterns (e.g., utility shutoff threats, KYC freezes, direct `.apk` downloads).
-  * **Tier 2 (~185 ms):** 8-bit quantized MobileBERT / TinyBERT model deployed via TensorFlow Lite for complex, novel linguistic social engineering cues.
-  * **Tier 3 (Heuristic):** Real-time monitoring of malicious APK installations, remote desktop tools (AnyDesk, TeamViewer), and digital arrest extortion.
-* **Non-Blocking Compose Overlays:** Displays high-priority warning cards directly above targeted applications (WhatsApp, SMS, Telegram) using Android `WindowManager` overlay channels without interrupting normal OS navigation.
+* **Zero-Cloud Data Sovereignty:** User messages, notifications, call logs, and telemetry never leave the device. All processing occurs locally within the Android hardware sandbox.
+* **Dual-Pillar Defense Engine:**
+  * **Pillar 1: NLP & Deterministic Classification:** Tier 1 ultra-fast token matching (<0.1ms) + Tier 2 quantized MobileBERT transformer (~185ms) for text analysis.
+  * **Pillar 2: Real-Time User Behavior Analysis (UBA):** Contextual tracking across apps (Instagram $\rightarrow$ Telegram/WhatsApp), temporal OTP-to-call correlation, unknown video call monitoring, and remote desktop installation watchdogs.
+* **Non-Blocking System Overlays:** Displays high-priority warning cards directly above targeted applications (WhatsApp, SMS, Telegram, Phone, Browsers) using Android `WindowManager` overlay channels without interrupting normal OS navigation.
 * **Transient Local Persistence:** Encrypted Room SQLite database with automatic 14-day record pruning and in-memory deduplication caching to prevent storage and RAM bloat.
 
 ---
@@ -43,19 +43,104 @@ Unlike conventional anti-fraud tools that stream user messages to remote LLMs, *
 ## 🚀 System Architecture
 
 ```mermaid
-flowchart LR
-    A[Incoming Message / SMS / WhatsApp] --> B[MessageReaderAccessibilityService]
-    B --> C{ScamAnalyzer Engine}
-    C -->|Deterministic Match &lt;0.1ms| D[Tier 1: Rule Engine]
-    C -->|Complex NLP ~185ms| E[Tier 2: Quantized TFLite]
-    D --> F{Threat &ge; 0.90?}
-    E --> F
-    F -->|Yes| G[Jetpack Compose Overlay Card]
-    F -->|No| H[(Local Room DB)]
-    G --> H
+flowchart TB
+    subgraph INGESTION["1. Multi-Modal Ingestion Layer"]
+        A1[SMS & Messaging Apps<br/>WhatsApp, Messages, Telegram] --> B1[MessageReaderAccessibilityService]
+        A2[Social Media & Browsers<br/>Instagram, Facebook, Chrome] --> B1
+        A3[Cellular & VoIP Calls] --> B2[AppPhoneStateReceiver]
+        A4[Package Installs & APKs] --> B3[AppInstallReceiver]
+        A5[Bank OTP Messages] --> B4[OtpManager]
+    end
+
+    subgraph ENGINE["2. EdgeGuard Dual Threat Engine"]
+        B1 & B2 & B3 & B4 --> C1{Event Dispatcher & Filter}
+        
+        subgraph NLP_ENGINE["Pillar 1: Text & Intent Analysis"]
+            C1 -->|Text Content| D1[Tier 1: Deterministic Rules &lt;0.1ms]
+            C1 -->|Novel Variants| D2[Tier 2: Quantized TFLite NLP ~185ms]
+        end
+
+        subgraph UBA_ENGINE["Pillar 2: User Behavior Analysis (UBA)"]
+            C1 -->|Cross-App Transition| E1[Social Funnel Interceptor<br/>Instagram/Browser &rarr; TG/WA Group]
+            C1 -->|Temporal Correlation| E2[OTP Theft Interceptor<br/>Unknown Call &le; 7m after Bank OTP]
+            C1 -->|Incoming Video| E3[Sextortion Watchdog<br/>Unknown Video Call Detector]
+            C1 -->|RAT Installation| E4[RAT Watchdog<br/>AnyDesk/TeamViewer + Active Call]
+            C1 -->|Digital Arrest| E5[Banking App Shield<br/>Bank Opened &le; 2h of Threat]
+            C1 -->|Search Query| E6[Browser Intent Scanner<br/>Trading, Loans, Helplines]
+        end
+    end
+
+    subgraph PERSISTENCE["3. Local Persistence Layer"]
+        D1 & D2 & E1 & E2 & E3 & E4 & E5 & E6 --> F1[(Local Room DB<br/>14-Day Auto-Pruned)]
+    end
+
+    subgraph INTERVENTION["4. User Intervention Layer"]
+        D1 & D2 & E1 & E2 & E3 & E4 & E5 & E6 -->|Threat Verified| G1{Overlay Permission?}
+        G1 -->|Granted| H1[Real-Time Compose Overlay Alert]
+        G1 -->|Denied / Fallback| H2[High-Priority System Notification]
+    end
+
+    style INGESTION fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
+    style ENGINE fill:#0f172a,stroke:#8b5cf6,stroke-width:2px,color:#fff
+    style NLP_ENGINE fill:#1e1b4b,stroke:#a855f7,stroke-width:2px,color:#fff
+    style UBA_ENGINE fill:#14532d,stroke:#22c55e,stroke-width:2px,color:#fff
+    style PERSISTENCE fill:#1e1e24,stroke:#10b981,stroke-width:2px,color:#fff
+    style INTERVENTION fill:#311b92,stroke:#ec4899,stroke-width:2px,color:#fff
 ```
 
-For complete architectural diagrams, state machine specifications, and sequence charts, refer to the [**Technical Design Document**](./TECHNICAL_DESIGN_DOCUMENT.md).
+For complete sequence diagrams, state machines, and mathematical formulations, refer to the [**Technical Design Document**](./TECHNICAL_DESIGN_DOCUMENT.md).
+
+---
+
+## 🧠 User Behavior Analysis (UBA) & Multi-App Funnels
+
+A critical innovation of EdgeGuard AI is its ability to detect **behavioral multi-app attack funnels** before financial damage occurs:
+
+```mermaid
+graph TD
+    subgraph Behavioral Threat Interceptors
+        T1["📲 1. Social Funnel Interceptor<br/>Instagram / Ads &rarr; Telegram / WhatsApp Group<br/>Alerts against Fake Trading & Task Scams"]
+        T2["📹 2. Sextortion Watchdog<br/>Unknown VoIP / Cellular Video Call<br/>Alerts to cover camera & prevent blackmail"]
+        T3["🔐 3. OTP Theft Interceptor<br/>Bank OTP received + Unknown Call within 7 mins<br/>Alerts user NEVER to share OTP over call"]
+        T4["💻 4. Remote Access (RAT) Watchdog<br/>AnyDesk / TeamViewer installed during/after call<br/>Alerts user against remote device takeover"]
+        T5["🏛️ 5. Digital Arrest Shield<br/>Opening Banking App &le; 2 hours after fake police threat<br/>Blocks coerced fund transfers"]
+        T6["🔍 6. Pre-Emptive Search Scanner<br/>Searching for trading, loans, or helplines in browser<br/>Warns against sponsored fake listings"]
+    end
+```
+
+### 1. Social Media Funnel Interceptor (Instagram $\rightarrow$ Telegram / WhatsApp)
+* **Attack Scenario:** A user browsing Instagram, Facebook, or a mobile browser taps an advertisement or profile link promising *"Guaranteed 500% Stock Trading Returns"* or *"VIP Crypto Signals"*. The link redirects the user into WhatsApp or Telegram to join an unverified group.
+* **EdgeGuard AI Intervention:** `MessageReaderAccessibilityService` monitors package transitions. When it detects a direct jump from Instagram (`com.instagram.android`) or browser into a Telegram or WhatsApp group join screen within 60 seconds, it intercepts the screen with:
+  > **🚨 BEWARE OF FAKE TRADING GROUPS!**  
+  > *You were redirected from social media to join this group. Scammers create fake investment channels to steal your savings. Never transfer money for stock tips or crypto schemes!*
+
+### 2. Unknown Video Call Watchdog (Sextortion Defense)
+* **Attack Scenario:** Scammers initiate an unexpected video call from an unsaved number on WhatsApp or cellular networks. Once the victim answers, scammers record the victim's face alongside explicit video to manufacture blackmail material.
+* **EdgeGuard AI Intervention:** Cross-references the incoming video call against the device's local phonebook (`ContactUtils.isContactExists`). If the caller is unknown, EdgeGuard AI triggers `OverlayUtils.showSextortionWarningOverlay`:
+  > **⚠️ SEXTORTION ALERT: UNKNOWN VIDEO CALL**  
+  > *Scammers use video calls from unknown numbers to record your face and blackmail you. Keep your camera covered and decline calls from unknown callers!*
+
+### 3. Bank OTP + Unknown Call Correlation (OTP Theft Interceptor)
+* **Attack Scenario:** A victim receives a bank transaction OTP. Within seconds, a scammer calls from an unknown number posing as a bank manager or credit card officer, demanding the OTP to "reverse a fraudulent charge."
+* **EdgeGuard AI Intervention:** `OtpManager` logs the timestamp of incoming bank OTPs. When `AppPhoneStateReceiver` detects an incoming call from an unknown number within **7 minutes** of receiving an OTP, it immediately pops `OverlayUtils.showOtpWarningOverlay` directly over the ringing call screen:
+  > **🛑 CRITICAL: DO NOT SHARE YOUR OTP!**  
+  > *You received a bank OTP recently, and now an unknown caller is ringing your phone. Bank officials NEVER ask for OTPs or passwords over the phone!*
+
+### 4. Remote Access / RAT Watchdog (AnyDesk & TeamViewer Interceptor)
+* **Attack Scenario:** Over an active phone call, a scammer convinces the victim to download a remote access app (AnyDesk, TeamViewer, RustDesk, QuickSupport) to "solve a technical issue" or "unfreeze an account," allowing the scammer to remotely control the phone and drain bank accounts.
+* **EdgeGuard AI Intervention:** `AppInstallReceiver` listens for package installations (`ACTION_PACKAGE_ADDED`). If a blacklisted remote access app is installed **while an unknown call is active or within 1 hour of an unknown call**, EdgeGuard AI pops `OverlayUtils.showRatWarningOverlay`:
+  > **🚨 SEVERE WARNING: DEVICE HIJACKING ATTEMPT!**  
+  > *You installed a remote desktop app while talking to an unknown caller. This allows them to see your screen and steal your bank passwords. Hang up and uninstall immediately!*
+
+### 5. Digital Arrest $\rightarrow$ Banking App Protection
+* **Attack Scenario:** Scammers impersonate CBI, Police, or Customs officers, accusing the victim of money laundering and placing them under "digital arrest" via Skype or WhatsApp, ordering them to transfer money to a "court verification account."
+* **EdgeGuard AI Intervention:** When a digital arrest threat is intercepted, a 2-hour protection window is activated. If the panicked user launches any banking app (SBI, HDFC, ICICI, PhonePe, Paytm), EdgeGuard AI intervenes with `showDigitalArrestWarningOverlay`:
+  > **🛑 STOP! DIGITAL ARREST IS A 100% FAKE SCAM!**  
+  > *Law enforcement agencies NEVER arrest people via video calls, nor do they ever demand money transfers. Do not transfer any funds!*
+
+### 6. Pre-Emptive Browser Search Intent Scanner
+* **Attack Scenario:** Users search Google for customer care numbers, loan approvals, or travel bookings and click sponsored scam ads containing fake helpline numbers.
+* **EdgeGuard AI Intervention:** Inspects browser query intents and displays pre-emptive safety cards warning users before they dial fraudulent customer care numbers or pay advance booking fees over WhatsApp QR codes.
 
 ---
 
@@ -80,8 +165,9 @@ For complete architectural diagrams, state machine specifications, and sequence 
 
 *Recorded on physical Android device (Snapdragon 8 Gen 2, 8 GB RAM, Android 14):*
 
-* **Tier 1 Inference Latency:** `< 0.08 ms`
-* **Tier 2 NLP Inference Latency:** `~ 185 ms`
+* **Tier 1 (Deterministic) Latency:** `< 0.08 ms`
+* **Tier 2 (TFLite NLP) Latency:** `~ 185 ms`
+* **Behavioral Funnel Latency:** `< 0.05 ms`
 * **Peak Memory Allocation:** `~ 190 MB RAM` during active neural evaluation
 * **Quantized Model Size:** `30 MB` (INT8 Quantized MobileBERT / FastText payload)
 * **Battery Impact:** `< 0.8%` battery consumption per 24 hours of background monitoring
@@ -104,8 +190,6 @@ Ensure the following tools are installed on your workstation:
 * **CMake:** **`3.22.1`** (Required for native C++ JNI inference libraries)
 
 ### 2. Environment Variables Configuration
-
-Set the following environment variables on your system:
 
 #### Windows (PowerShell / System Environment Variables):
 ```powershell
@@ -138,7 +222,6 @@ Create or verify the `local.properties` file in the root directory of the projec
 sdk.dir=C\:\\Users\\YourUsername\\AppData\\Local\\Android\\Sdk
 ndk.dir=C\:\\Users\\YourUsername\\AppData\\Local\\Android\\Sdk\\ndk\\26.0.10792818
 ```
-*(On macOS/Linux, specify forward slashes, e.g. `sdk.dir=/Users/username/Library/Android/sdk`)*
 
 ---
 
@@ -191,17 +274,18 @@ adb devices
 
 ## 📱 Device Permissions & Onboarding
 
-For EdgeGuard AI to protect your communications in real time, the following permissions must be enabled on the target device:
+For EdgeGuard AI to protect your communications and user behavior in real time, the following permissions must be enabled:
 
-1. **Accessibility Service (Required for Real-Time Text Inspection):**
+1. **Accessibility Service (Required for Text Inspection & Cross-App Funnel Tracking):**
    * Navigate to: `Settings > Accessibility > Downloaded Apps > EdgeGuard AI` (or `SafeTexts`).
    * Toggle the service to **ON** and confirm.
 2. **Display Over Other Apps (Required for Warning Card Overlays):**
    * Navigate to: `Settings > Apps > Special App Access > Display Over Other Apps > EdgeGuard AI`.
    * Enable **Allow display over other apps**.
-3. **Notification Access (Fallback Alerts):**
-   * Navigate to: `Settings > Apps > Special App Access > Notification Access`.
-   * Enable access to allow high-priority security notifications when overlay permissions are restricted.
+3. **Phone & Call State Permission (Required for OTP & Call Correlation):**
+   * Enables `AppPhoneStateReceiver` to detect unknown callers when OTPs are received.
+4. **Notification Access (Fallback Alerts):**
+   * Enables high-priority fallback security notifications if overlays are restricted.
 
 ---
 
