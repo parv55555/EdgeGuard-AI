@@ -10,11 +10,13 @@
 ## 1. Executive Summary & Design Vision
 
 Modern cyber fraud has evolved far beyond simplistic phishing text. Today's most dangerous scams are **multi-stage, multi-app attack funnels** and **social engineering schemes**:
-1. **Social App Funnels:** Enticing victims on Instagram or Facebook ads and immediately redirecting them to unverified Telegram or WhatsApp groups for fake stock trading, crypto schemes, or task scams.
-2. **Sextortion Blackmail:** Initiating unexpected video calls from unknown numbers via WhatsApp, Instagram, or cellular VoIP, recording the victim's face to fabricate extortion material.
-3. **Coordinated OTP Theft:** Sending a spoofed bank debit or security message, then immediately calling the victim from an unknown number posing as an official bank executive to harvest the OTP.
-4. **Remote Access Hijacking (RAT):** Directing victims over an active call to download remote desktop apps (AnyDesk, TeamViewer, RustDesk) from app stores or browsers to siphon funds.
-5. **Digital Arrest Extortion:** Impersonating law enforcement (CBI, Police, Narcotics) to coerce victims into opening their banking apps and transferring life savings into "safe government accounts."
+1. **Fake Instagram / Meta Trading Ads Funnels:** Enticing victims on Instagram Reels or Facebook sponsored ads promising 500% guaranteed stock/crypto returns with deepfakes and bogus SEBI licenses, immediately redirecting victims into unverified WhatsApp or Telegram VIP trading groups.
+2. **Disguised APK Frauds & Sideload Trojans:** Circulating malicious `.apk` packages (e-Challan notices like `echallan.apk`, wedding invitation cards `Wedding_Card.apk`, PM-Kisan benefits) via messaging apps and browsers to execute SMS grabbers and banking trojans.
+3. **WhatsApp & Telegram Group Phishing Messages:** Flooding public and community chat groups with credential-harvesting phishing links, fraudulent crypto giveaways, and deceptive task portals.
+4. **Sextortion Blackmail:** Initiating unexpected video calls from unknown numbers via WhatsApp, Instagram, or cellular VoIP, recording the victim's face to fabricate extortion material.
+5. **Coordinated OTP Theft:** Sending a spoofed bank debit or security message, then immediately calling the victim from an unknown number posing as an official bank executive to harvest the OTP.
+6. **Remote Access Hijacking (RAT):** Directing victims over an active call to download remote desktop apps (AnyDesk, TeamViewer, RustDesk) from app stores or browsers to siphon funds.
+7. **Digital Arrest Extortion:** Impersonating law enforcement (CBI, Police, Narcotics) to coerce victims into opening their banking apps and transferring life savings into "safe government accounts."
 
 Traditional anti-fraud solutions rely solely on reactive, cloud-based text scanning. They fail to understand **cross-app context**, incur **1.5–4 second latency delays**, and violate **user privacy** by harvesting personal communications.
 
@@ -49,45 +51,48 @@ graph TD
 
 ```mermaid
 flowchart TB
-    subgraph INGESTION["1. Multi-Modal Ingestion Layer"]
-        A1[SMS & Messaging Apps<br/>WhatsApp, Messages, Telegram] --> B1[MessageReaderAccessibilityService<br/>Accessibility Node Tree & Window Changes]
-        A2[Social Media & Browsers<br/>Instagram, Facebook, Chrome] --> B1
-        A3[Cellular & VoIP Calls] --> B2[AppPhoneStateReceiver<br/>Telephony State & Call Watchdog]
-        A4[Application Installs & APKs] --> B3[AppInstallReceiver<br/>Package Installation & RAT Watchdog]
-        A5[Telecom OTP Messages] --> B4[OtpManager<br/>Temporal Timestamp & Call Correlator]
+    subgraph INGESTION["1. Multi-Modal Ingestion Layer (100% On-Device)"]
+        A1["📱 Social Media & Ads<br/>Instagram Reels, Facebook Ads, Browsers"] --> B1[MessageReaderAccessibilityService<br/>Node Tree & Window Tracker]
+        A2["💬 Chats & Community Groups<br/>WhatsApp Groups, Telegram Channels, SMS"] --> B1
+        A3["📦 Sideloaded APK Files<br/>Traffic e-Challan & Wedding Card APKs"] --> B1 & B3[AppInstallReceiver<br/>Package Installation Watchdog]
+        A4["📞 Cellular & VoIP Telephony<br/>Incoming Unknown Calls & Video Calls"] --> B2[AppPhoneStateReceiver<br/>Telephony State Listener]
+        A5["🔐 Bank Transaction OTPs<br/>Incoming SMS Verification Codes"] --> B4[OtpManager<br/>Temporal Timestamp & Call Correlator]
     end
 
     subgraph ENGINE["2. EdgeGuard Dual Threat Engine"]
-        B1 & B2 & B3 & B4 --> C1{Event Dispatcher & Filter}
+        B1 & B2 & B3 & B4 --> C1{Event Dispatcher & Behavioral Router}
         
         subgraph NLP_PIPELINE["A. Text & Intent Engine"]
-            C1 -->|Text Payload| D1[Tier 1: Deterministic Token Matcher<br/>Latency: &lt;0.1 ms]
-            C1 -->|Novel / Ambiguous| D2[Tier 2: Quantized TFLite NLP<br/>MobileBERT / Latency: ~185 ms]
+            C1 -->|Raw Message Text| D1["Tier 1: Deterministic Matcher (&lt;0.1 ms)<br/>Token trie, regex, phonetics & homoglyphs"]
+            C1 -->|Novel / Ambiguous| D2["Tier 2: Quantized TFLite NLP (~185 ms)<br/>MobileBERT INT8 Quantized SLM"]
         end
 
         subgraph UBA_PIPELINE["B. User Behavior Analysis (UBA) Engine"]
-            C1 -->|App Switch| E1[Funnel Interceptor<br/>Instagram/Browser &rarr; TG/WA Group]
-            C1 -->|Call + OTP| E2[OTP Theft Interceptor<br/>Unknown Call &le; 7m after OTP]
-            C1 -->|Incoming Video| E3[Sextortion Watchdog<br/>Unknown Video Call Detector]
-            C1 -->|RAT / APK Install| E4[RAT & Package Watchdog<br/>AnyDesk/TeamViewer + Active Call]
-            C1 -->|Digital Arrest| E5[Banking App Shield<br/>Bank Opened &le; 2h of Threat]
-            C1 -->|Search Intent| E6[Browser Intent Scanner<br/>Trading, Loans, Helplines]
+            C1 -->|Social Ad Redirect| E1["📈 Meta / Instagram Trading Ad Interceptor<br/>Instagram/FB Ads &rarr; Telegram/WhatsApp VIP Group"]
+            C1 -->|APK Click / Install| E2["📦 Universal APK Fraud & Pre-Install Shield<br/>e-Challan / Wedding APK Intercept + Auto-Back Block"]
+            C1 -->|Group Chat Feed| E3["💬 WhatsApp & Telegram Group Phishing Scanner<br/>Scam Links, Crypto Airdrops & Group Payloads"]
+            C1 -->|Call + OTP Delay| E4["🔐 Temporal OTP Theft Interceptor<br/>Unknown Call &le; 7m after Bank OTP"]
+            C1 -->|Incoming Video| E5["📹 Sextortion Watchdog<br/>Unknown Video Call Detector"]
+            C1 -->|RAT Installation| E6["💻 Remote Access (RAT) Watchdog<br/>AnyDesk/TeamViewer + Active Call"]
+            C1 -->|Digital Arrest| E7["🏛️ Digital Arrest Shield<br/>Bank Opened &le; 2h of Threat"]
+            C1 -->|Search Intent| E8["🔍 Pre-Emptive Search Scanner<br/>Fake Customer Care, Loans & Helplines"]
         end
     end
 
     subgraph PERSISTENCE["3. Local Persistence Layer"]
-        D1 & D2 & E1 & E2 & E3 & E4 & E5 & E6 --> F1[(Local Room DB<br/>MessageEntity & ChatContext)]
-        F1 --> F2[14-Day Auto-Pruning Engine]
+        D1 & D2 & E1 & E2 & E3 & E4 & E5 & E6 & E7 & E8 --> F1[("Local Room Database<br/>MessageEntity & ChatContext (Encrypted)")]
+        F1 --> F2["14-Day Auto-Pruning Engine<br/>Automated Background Cleanup"]
     end
 
     subgraph INTERVENTION["4. Real-Time Intervention Layer"]
-        D1 & D2 & E1 & E2 & E3 & E4 & E5 & E6 -->|Threat Verified| G1{Overlay Permission?}
+        D1 & D2 & E1 & E2 & E3 & E4 & E5 & E6 & E7 & E8 -->|Threat Verified| G1{Overlay Permission?}
         
-        G1 -->|Granted| H1[Real-Time System Warning Overlay<br/>OverlayUtils / WindowManager / Compose]
-        G1 -->|Denied / Fallback| H2[High-Priority System Notification<br/>Channel: SCAM_ALERTS]
+        G1 -->|Granted| H1["🚨 Non-Blocking System Warning Overlay<br/>OverlayUtils / WindowManager / Compose"]
+        G1 -->|Denied / Fallback| H2["⚠️ High-Priority System Notification<br/>Channel: SCAM_ALERTS with Sound/Vibration"]
+        E2 -->|Trojan Detected| H3["🛑 Android Package Installer Auto-Dismiss<br/>Simulates GLOBAL_ACTION_BACK to block install"]
         
-        H1 --> I1[User Actions: Dismiss / View Details / Mark False Positive]
-        I1 -->|False Positive| J1[Update In-Memory Cache & Suppress]
+        H1 --> I1["User Actions: Dismiss / View Details / Mark False Positive"]
+        I1 -->|False Positive| J1["Update In-Memory Cache & Suppress"]
     end
 
     style INGESTION fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
@@ -102,38 +107,99 @@ flowchart TB
 
 ## 4. User Behavior Analysis (UBA) & Threat Funnel Specifications
 
-EdgeGuard AI features six distinct behavioral detection mechanisms implemented across `MessageReaderAccessibilityService.kt`, `AppPhoneStateReceiver.kt`, `OtpManager.kt`, and `AppInstallReceiver.kt`:
+EdgeGuard AI features eight distinct behavioral detection mechanisms implemented across `MessageReaderAccessibilityService.kt`, `AppPhoneStateReceiver.kt`, `OtpManager.kt`, and `AppInstallReceiver.kt`:
 
-### 4.1 Cross-App Social Funnel Interception (Instagram $\rightarrow$ Telegram / WhatsApp)
+### 4.1 Fake Instagram / Meta Trading Ads Funnel Interception (Instagram / Facebook &rarr; Telegram / WhatsApp)
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor Victim as User / Victim
-    participant Social as Instagram / Facebook / Chrome
+    participant Meta as Instagram / Facebook Feed & Reels
+    participant Browser as Custom Tab / Web View
     participant Service as MessageReaderAccessibilityService
-    participant Target as WhatsApp / Telegram
+    participant Target as WhatsApp / Telegram Group Join Screen
     participant Overlay as OverlayUtils (Compose Window)
 
-    Victim->>Social: Browsing Instagram / Facebook Ads
-    Social->>Victim: Shows "Guaranteed 500% Stock Trading Returns" Ad
-    Victim->>Social: Clicks link to join WhatsApp / Telegram Group
-    Social->>Target: System Intent (Redirects to Telegram/WhatsApp)
+    Victim->>Meta: Browses Instagram Reels / Sponsored Ads
+    Meta->>Victim: Renders "500% Guaranteed Stock Returns with SEBI License" Ad
+    Victim->>Meta: Clicks sponsored ad "Join Official VIP Channel"
+    Meta->>Browser: Opens redirect shortlink (e.g., bit.ly / t.me)
+    Browser->>Target: System Intent (Opens WhatsApp or Telegram Group Join Screen)
     Target->>Service: AccessibilityEvent (TYPE_WINDOW_STATE_CHANGED)
     
-    Service->>Service: Check previousPackageName & lastPackageTime
-    Note over Service: wasBrowserOrSocialPrevious == true AND delta &lt; 60s
-    Service->>Service: Detect Group Join Screen / Invite Link ("t.me", "chat.whatsapp.com")
+    Service->>Service: Evaluate previousPackageName ("com.instagram.android" / "com.facebook.katana")
+    Service->>Service: Verify elapsed transition window &lt; 60 seconds
+    Service->>Service: Detect Group Join Screen / Invite Signature ("t.me", "chat.whatsapp.com")
     Service-->>Overlay: Trigger showScamFunnelWarningOverlay(context)
-    Overlay->>Victim: 🚨 "BEWARE OF FAKE TRADING GROUPS! You were redirected from social media. Never invest in unverified stock/crypto channels!"
+    Overlay->>Victim: 🚨 "BEWARE OF FAKE TRADING GROUPS! You were redirected from social media ads to join this group. Never transfer money for stock tips or crypto schemes!"
 ```
 
 * **Target Schemes:** Fraudulent stock trading groups, bogus cryptocurrency tips, task fraud channels.
-* **Mechanism:** Monitors app package transitions. If user switches from Instagram (`com.instagram.android`), Facebook (`com.facebook.katana`), or mobile browsers into WhatsApp or Telegram group join screens within a 60-second window, the funnel is flagged.
+* **Mechanism:** Monitors app package transitions. If user switches from Instagram (`com.instagram.android`), Facebook (`com.facebook.katana`), or mobile browsers into WhatsApp or Telegram group join screens within a 60-second window, the funnel is flagged with a high-priority warning overlay.
 
 ---
 
-### 4.2 Temporal OTP + Unknown Call Correlation (OTP Theft Interceptor)
+### 4.2 Universal APK Frauds & Pre-Install Trojan Shield (e-Challan & Wedding Card APKs)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Victim as User / Victim
+    participant Chat as WhatsApp / Telegram / SMS / Chrome
+    participant Service as MessageReaderAccessibilityService
+    participant Installer as Android PackageInstaller
+    participant Overlay as OverlayUtils
+
+    Victim->>Chat: Receives disguised file ("echallan.apk" or "Wedding_Card.apk")
+    Victim->>Chat: Taps the .apk attachment / download link
+    Chat->>Installer: Android System Intent (action.VIEW -> application/vnd.android.package-archive)
+    Installer->>Service: AccessibilityEvent (TYPE_WINDOW_STATE_CHANGED from "com.android.packageinstaller")
+    
+    Service->>Service: Match filename against known trojan patterns (*.apk, challan, wedding, update)
+    Service->>Service: Identify unverified sideload intent outside Google Play Store
+    Service->>Installer: Execute performGlobalAction(GLOBAL_ACTION_BACK) [Anti-Clickjacking]
+    Note over Service,Installer: Automatically dismisses malicious package installer prompt
+    Service-->>Overlay: Trigger showScamAlertOverlay("MALICIOUS APK TROJAN DETECTED")
+    Overlay->>Victim: 🛑 "CRITICAL MALWARE WARNING: Do NOT install this .apk file! Scammers disguise banking trojans as traffic challans or wedding cards to steal your OTPs!"
+```
+
+* **Target Schemes:** Traffic e-Challan APKs (`echallan.apk`), Wedding Invitation APKs (`Wedding_Card.apk`), PM-Kisan trojans, fake banking patches.
+* **Mechanism:** 
+  1. Intercepts click events on `.apk` files inside messaging apps (WhatsApp, Telegram, Messages) and mobile browsers.
+  2. Automatically executes `GLOBAL_ACTION_BACK` via accessibility service to dismiss the Android package installer window, neutralizing clickjacking.
+  3. Displays an immediate red overlay warning advising user of the malicious trojan.
+
+---
+
+### 4.3 WhatsApp & Telegram Group Phishing Messages Scanner
+
+```mermaid
+flowchart TD
+    A["Incoming Message in WhatsApp / Telegram Group"] --> B["MessageReaderAccessibilityService (TYPE_WINDOW_CONTENT_CHANGED)"]
+    B --> C["Node Tree Extraction (Group Chat Context Active)"]
+    C --> D{"Does message contain URL, Airdrop, or Free Offer?"}
+    D -->|No: Regular Chat| E["Skip / In-Memory Deduplication"]
+    D -->|Yes: High-Risk Payload| F["ScamAnalyzer: Tier 1 Deterministic & Pattern Matrix"]
+    
+    F --> G{"Matched Phishing Token / Shortened Link / Scam Regex?"}
+    G -->|Yes| H["Instant Alert Trigger (&lt;0.1 ms)"]
+    G -->|Novel / Ambiguous| I["Tier 2: Quantized MobileBERT SLM Evaluation (~185 ms)"]
+    
+    I --> J{"Confidence Score &ge; 0.85?"}
+    J -->|Yes| H
+    J -->|No| K["Safe Group Content"]
+    
+    H --> L["OverlayUtils: showGroupPhishingOverlay()"]
+    L --> M["🚨 PHISHING DETECTED IN GROUP: Warning! Do NOT tap this link or claim fake airdrops! Scammers steal login tokens and bank credentials via group phishing."]
+```
+
+* **Target Schemes:** Mass group phishing links, fake cryptocurrency airdrops, bogus free recharge links, unverified gift giveaways shared in community groups.
+* **Mechanism:** Inspects node text changes within group chat viewports. When high-risk URLs, shortened domains, or deceptive tokens are rendered on-screen, EdgeGuard AI computes a composite risk score and overlays an instant warning above the chat bubble before the user can tap the link.
+
+---
+
+### 4.4 Temporal OTP + Unknown Call Correlation (OTP Theft Interceptor)
 
 ```mermaid
 sequenceDiagram
@@ -164,7 +230,7 @@ sequenceDiagram
 
 ---
 
-### 4.3 Unknown Video Call Watchdog (Sextortion & Blackmail Defense)
+### 4.5 Unknown Video Call Watchdog (Sextortion & Blackmail Defense)
 
 ```mermaid
 flowchart TD
@@ -182,7 +248,7 @@ flowchart TD
 
 ---
 
-### 4.4 Remote Administration Tool (RAT) Installation Watchdog
+### 4.6 Remote Administration Tool (RAT) Installation Watchdog
 
 ```mermaid
 flowchart TD
@@ -205,7 +271,7 @@ flowchart TD
 
 ---
 
-### 4.5 Digital Arrest $\rightarrow$ Banking App Protection
+### 4.7 Digital Arrest $\rightarrow$ Banking App Protection
 
 ```mermaid
 flowchart LR
@@ -222,7 +288,7 @@ flowchart LR
 
 ---
 
-### 4.6 Pre-Emptive Browser Search Intent Scanner
+### 4.8 Pre-Emptive Browser Search Intent Scanner
 
 * **Mechanism:** Inspects web browser query bars in Chrome, Samsung Internet, Brave, and Opera:
   * **Trading / Crypto Intent:** Searches containing `trading`, `crypto`, `stock tips`, `options trading` $\rightarrow$ triggers Pre-Emptive Trading Alert (`showPreEmptiveTradingAlert`).

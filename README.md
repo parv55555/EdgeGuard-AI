@@ -44,40 +44,43 @@ Unlike conventional anti-fraud tools that stream user messages to remote servers
 
 ```mermaid
 flowchart TB
-    subgraph INGESTION["1. Multi-Modal Ingestion Layer"]
-        A1[SMS & Messaging Apps<br/>WhatsApp, Messages, Telegram] --> B1[MessageReaderAccessibilityService]
-        A2[Social Media & Browsers<br/>Instagram, Facebook, Chrome] --> B1
-        A3[Cellular & VoIP Calls] --> B2[AppPhoneStateReceiver]
-        A4[Package Installs & APKs] --> B3[AppInstallReceiver]
-        A5[Bank OTP Messages] --> B4[OtpManager]
+    subgraph INGESTION["1. Multi-Modal Ingestion Layer (100% On-Device)"]
+        A1["📱 Social Media & Sponsored Ads<br/>Instagram Reels, Facebook Ads, Chrome Browsers"] --> B1[MessageReaderAccessibilityService]
+        A2["💬 Chats & Community Groups<br/>WhatsApp Groups, Telegram Channels, SMS"] --> B1
+        A3["📦 Sideloaded APK Files<br/>Traffic e-Challan & Wedding Card APKs"] --> B1 & B3[AppInstallReceiver]
+        A4["📞 Cellular & VoIP Telephony<br/>Incoming Unknown Calls & Video Calls"] --> B2[AppPhoneStateReceiver]
+        A5["🔐 Bank Transaction OTPs<br/>Incoming SMS Verification Codes"] --> B4[OtpManager]
     end
 
     subgraph ENGINE["2. EdgeGuard Dual Threat Engine"]
-        B1 & B2 & B3 & B4 --> C1{Event Dispatcher & Filter}
+        B1 & B2 & B3 & B4 --> C1{Event Dispatcher & Behavioral Router}
         
-        subgraph NLP_ENGINE["Pillar 1: Text & Intent Analysis"]
-            C1 -->|Text Content| D1[Tier 1: Deterministic Rules &lt;0.1ms]
-            C1 -->|Novel Variants| D2[Tier 2: Quantized TFLite NLP ~185ms]
+        subgraph NLP_ENGINE["Pillar 1: NLP & Deterministic Pipeline"]
+            C1 -->|Raw Message Text| D1["Tier 1: Deterministic Rule Matrix (&lt;0.1ms)<br/>Keyword trie, regex, phonetics & homoglyphs"]
+            C1 -->|Novel / Ambiguous Variants| D2["Tier 2: Quantized TFLite SLM (~185ms)<br/>Local MobileBERT 8-bit quantized weights"]
         end
 
-        subgraph UBA_ENGINE["Pillar 2: User Behavior Analysis (UBA)"]
-            C1 -->|Cross-App Transition| E1[Social Funnel Interceptor<br/>Instagram/Browser &rarr; TG/WA Group]
-            C1 -->|Temporal Correlation| E2[OTP Theft Interceptor<br/>Unknown Call &le; 7m after Bank OTP]
-            C1 -->|Incoming Video| E3[Sextortion Watchdog<br/>Unknown Video Call Detector]
-            C1 -->|RAT Installation| E4[RAT Watchdog<br/>AnyDesk/TeamViewer + Active Call]
-            C1 -->|Digital Arrest| E5[Banking App Shield<br/>Bank Opened &le; 2h of Threat]
-            C1 -->|Search Query| E6[Browser Intent Scanner<br/>Trading, Loans, Helplines]
+        subgraph UBA_ENGINE["Pillar 2: Real-Time User Behavior Analysis (UBA)"]
+            C1 -->|Cross-App Ad Click| E1["📈 Meta / Instagram Trading Ad Interceptor<br/>Instagram/Facebook Ads &rarr; Telegram/WhatsApp VIP Group"]
+            C1 -->|Sideload APK Click| E2["📦 APK Fraud & Pre-Install Trojan Shield<br/>e-Challan / Wedding APK Intercept + Installer Dismissal"]
+            C1 -->|Group Chat Feed| E3["💬 WhatsApp & Telegram Group Phishing Scanner<br/>Mass-Broadcast Scam Links, Airdrops & Group Payloads"]
+            C1 -->|Temporal Correlation| E4["🔐 OTP Theft Interceptor<br/>Unknown Call &le; 7 mins after Bank OTP SMS"]
+            C1 -->|VoIP Video Call| E5["📹 Sextortion Watchdog<br/>Unknown Incoming Video Call Detector"]
+            C1 -->|Package Added| E6["💻 Remote Access (RAT) Watchdog<br/>AnyDesk / TeamViewer Install During Active Call"]
+            C1 -->|Bank App Launch| E7["🏛️ Digital Arrest Shield<br/>Bank App Opened &le; 2h of Police Extortion Threat"]
+            C1 -->|Query Bar Intent| E8["🔍 Pre-Emptive Search Scanner<br/>Fake Customer Care, Loan & Booking Queries"]
         end
     end
 
     subgraph PERSISTENCE["3. Local Persistence Layer"]
-        D1 & D2 & E1 & E2 & E3 & E4 & E5 & E6 --> F1[(Local Room DB<br/>14-Day Auto-Pruned)]
+        D1 & D2 & E1 & E2 & E3 & E4 & E5 & E6 & E7 & E8 --> F1[("Local Room Database<br/>Encrypted &bull; 14-Day Auto-Purge")]
     end
 
-    subgraph INTERVENTION["4. User Intervention Layer"]
-        D1 & D2 & E1 & E2 & E3 & E4 & E5 & E6 -->|Threat Verified| G1{Overlay Permission?}
-        G1 -->|Granted| H1[Real-Time Compose Overlay Alert]
-        G1 -->|Denied / Fallback| H2[High-Priority System Notification]
+    subgraph INTERVENTION["4. Instant Intervention Layer"]
+        D1 & D2 & E1 & E2 & E3 & E4 & E5 & E6 & E7 & E8 -->|Threat Confirmed| G1{Overlay Permission?}
+        G1 -->|Granted| H1["🚨 Non-Blocking Compose Warning Overlay<br/>Custom Floating Dialog via WindowManager"]
+        G1 -->|Denied / Background| H2["⚠️ High-Priority System Notification<br/>Channel: SCAM_ALERTS with Sound/Vibration"]
+        E2 -->|Trojan Detected| H3["🛑 Android Package Installer Auto-Dismiss<br/>Simulates GLOBAL_ACTION_BACK to block install"]
     end
 
     style INGESTION fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
@@ -99,46 +102,58 @@ A critical innovation of EdgeGuard AI is its ability to detect **behavioral mult
 ```mermaid
 graph TD
     subgraph Behavioral Threat Interceptors
-        T1["📲 1. Social Funnel Interceptor<br/>Instagram / Ads &rarr; Telegram / WhatsApp Group<br/>Alerts against Fake Trading & Task Scams"]
-        T2["📹 2. Sextortion Watchdog<br/>Unknown VoIP / Cellular Video Call<br/>Alerts to cover camera & prevent blackmail"]
-        T3["🔐 3. OTP Theft Interceptor<br/>Bank OTP received + Unknown Call within 7 mins<br/>Alerts user NEVER to share OTP over call"]
-        T4["💻 4. Remote Access (RAT) Watchdog<br/>AnyDesk / TeamViewer installed during/after call<br/>Alerts user against remote device takeover"]
-        T5["🏛️ 5. Digital Arrest Shield<br/>Opening Banking App &le; 2 hours after fake police threat<br/>Blocks coerced fund transfers"]
-        T6["🔍 6. Pre-Emptive Search Scanner<br/>Searching for trading, loans, or helplines in browser<br/>Warns against sponsored fake listings"]
+        T1["📈 1. Fake Instagram / Meta Trading Ads Interceptor<br/>Instagram / Facebook Sponsored Ads &rarr; Telegram / WhatsApp VIP Group<br/>Blocks Fake Stock Tips, Crypto Schemes & VIP Trading Funnels"]
+        T2["📦 2. Universal APK Frauds & Pre-Install Trojan Shield<br/>Fake Traffic e-Challan & Wedding Card .apk Files<br/>Dismisses Package Installer to Prevent Malware Execution"]
+        T3["💬 3. WhatsApp & Telegram Group Phishing Scanner<br/>Phishing Links, Bogus Giveaways & Crypto Airdrops in Groups<br/>Inspects Group Feeds in Real-Time Without Compromising Privacy"]
+        T4["📹 4. Sextortion Video Call Watchdog<br/>Unknown VoIP / Cellular Video Calls<br/>Alerts User to Cover Camera & Decline Blackmail Traps"]
+        T5["🔐 5. Temporal OTP Theft Interceptor<br/>Bank OTP Received + Unknown Call Within 7 Mins<br/>Alerts User NEVER to Share OTP Over Call"]
+        T6["💻 6. Remote Access (RAT) Watchdog<br/>AnyDesk / TeamViewer Installed During/After Call<br/>Alerts Against Total Device Hijacking"]
+        T7["🏛️ 7. Digital Arrest Shield<br/>Banking App Opened &le; 2 Hours After Fake Police Threat<br/>Prevents Coerced RTGS / IMPS Extortion Transfers"]
+        T8["🔍 8. Pre-Emptive Search Scanner<br/>Searching for Customer Care, Loans, or Trading in Browser<br/>Warns Before Tapping Sponsored Fraudulent Listings"]
     end
 ```
 
-### 1. Social Media Funnel Interceptor (Instagram $\rightarrow$ Telegram / WhatsApp)
-* **Attack Scenario:** A user browsing Instagram, Facebook, or a mobile browser taps an advertisement or profile link promising *"Guaranteed 500% Stock Trading Returns"* or *"VIP Crypto Signals"*. The link redirects the user into WhatsApp or Telegram to join an unverified group.
-* **EdgeGuard AI Intervention:** `MessageReaderAccessibilityService` monitors package transitions. When it detects a direct jump from Instagram (`com.instagram.android`) or browser into a Telegram or WhatsApp group join screen within 60 seconds, it intercepts the screen with:
+### 1. Fake Instagram / Meta Trading Ads Interceptor (Instagram / Facebook &rarr; Telegram / WhatsApp)
+* **Attack Scenario:** A user browsing Instagram feeds, Reels, or Facebook taps a sponsored Meta ad featuring deepfake celebrity endorsements, bogus SEBI certificates, or promising *"Guaranteed 500% Stock Trading Returns"*. The ad funnels the victim directly into WhatsApp or Telegram to join an unverified "VIP Trading Channel".
+* **EdgeGuard AI Intervention:** `MessageReaderAccessibilityService` tracks cross-app intent transitions. When it detects a redirect from Instagram (`com.instagram.android`), Facebook (`com.facebook.katana`), or mobile browsers into a Telegram or WhatsApp group join screen within 60 seconds, it intercepts the screen with:
   > **🚨 BEWARE OF FAKE TRADING GROUPS!**  
   > *You were redirected from social media to join this group. Scammers create fake investment channels to steal your savings. Never transfer money for stock tips or crypto schemes!*
 
-### 2. Unknown Video Call Watchdog (Sextortion Defense)
+### 2. Universal APK Frauds & Pre-Install Shield (e-Challan, Wedding Card & Sideload Trojans)
+* **Attack Scenario:** Attackers send disguised `.apk` trojans via WhatsApp, Telegram, SMS, or malicious landing pages—disguised as **Traffic e-Challan APKs** (`echallan.apk`), **Wedding Invitation Cards** (`Wedding_Card.apk`), **PM-Kisan updates**, or banking security patches.
+* **EdgeGuard AI Intervention:** 
+  * **Click Interception:** Intercepts clicks on `.apk` files inside WhatsApp, Telegram, Chrome, and Samsung Internet.
+  * **Pre-Install Shield:** Automatically simulates Android `GLOBAL_ACTION_BACK` to dismiss unverified package installer prompts, preventing clickjacking and displaying an unmistakable red trojan alert before the package can be installed.
+
+### 3. WhatsApp & Telegram Group Phishing Scanner
+* **Attack Scenario:** Scammers flood public and private community groups, broadcast channels, and college/work groups with deceptive phishing links, fake cryptocurrency airdrops, and credential-harvesting portals.
+* **EdgeGuard AI Intervention:** Continuously inspects group messages and shared links in real-time without compromising user group privacy. If an uncatalogued phishing link or malicious attachment is displayed, an immediate on-screen warning card warns the user before they tap.
+
+### 4. Unknown Video Call Watchdog (Sextortion Defense)
 * **Attack Scenario:** Scammers initiate an unexpected video call from an unsaved number on WhatsApp or cellular networks. Once the victim answers, scammers record the victim's face alongside explicit video to manufacture blackmail material.
 * **EdgeGuard AI Intervention:** Cross-references the incoming video call against the device's local phonebook (`ContactUtils.isContactExists`). If the caller is unknown, EdgeGuard AI triggers `OverlayUtils.showSextortionWarningOverlay`:
   > **⚠️ SEXTORTION ALERT: UNKNOWN VIDEO CALL**  
   > *Scammers use video calls from unknown numbers to record your face and blackmail you. Keep your camera covered and decline calls from unknown callers!*
 
-### 3. Bank OTP + Unknown Call Correlation (OTP Theft Interceptor)
+### 5. Bank OTP + Unknown Call Correlation (OTP Theft Interceptor)
 * **Attack Scenario:** A victim receives a bank transaction OTP. Within seconds, a scammer calls from an unknown number posing as a bank manager or credit card officer, demanding the OTP to "reverse a fraudulent charge."
 * **EdgeGuard AI Intervention:** `OtpManager` logs the timestamp of incoming bank OTPs. When `AppPhoneStateReceiver` detects an incoming call from an unknown number within **7 minutes** of receiving an OTP, it immediately pops `OverlayUtils.showOtpWarningOverlay` directly over the ringing call screen:
   > **🛑 CRITICAL: DO NOT SHARE YOUR OTP!**  
   > *You received a bank OTP recently, and now an unknown caller is ringing your phone. Bank officials NEVER ask for OTPs or passwords over the phone!*
 
-### 4. Remote Access / RAT Watchdog (AnyDesk & TeamViewer Interceptor)
+### 6. Remote Access / RAT Watchdog (AnyDesk & TeamViewer Interceptor)
 * **Attack Scenario:** Over an active phone call, a scammer convinces the victim to download a remote access app (AnyDesk, TeamViewer, RustDesk, QuickSupport) to "solve a technical issue" or "unfreeze an account," allowing the scammer to remotely control the phone and drain bank accounts.
 * **EdgeGuard AI Intervention:** `AppInstallReceiver` listens for package installations (`ACTION_PACKAGE_ADDED`). If a blacklisted remote access app is installed **while an unknown call is active or within 1 hour of an unknown call**, EdgeGuard AI pops `OverlayUtils.showRatWarningOverlay`:
   > **🚨 SEVERE WARNING: DEVICE HIJACKING ATTEMPT!**  
   > *You installed a remote desktop app while talking to an unknown caller. This allows them to see your screen and steal your bank passwords. Hang up and uninstall immediately!*
 
-### 5. Digital Arrest $\rightarrow$ Banking App Protection
+### 7. Digital Arrest &rarr; Banking App Protection
 * **Attack Scenario:** Scammers impersonate CBI, Police, or Customs officers, accusing the victim of money laundering and placing them under "digital arrest" via Skype or WhatsApp, ordering them to transfer money to a "court verification account."
 * **EdgeGuard AI Intervention:** When a digital arrest threat is intercepted, a 2-hour protection window is activated. If the panicked user launches any banking app (SBI, HDFC, ICICI, PhonePe, Paytm), EdgeGuard AI intervenes with `showDigitalArrestWarningOverlay`:
   > **🛑 STOP! DIGITAL ARREST IS A 100% FAKE SCAM!**  
   > *Law enforcement agencies NEVER arrest people via video calls, nor do they ever demand money transfers. Do not transfer any funds!*
 
-### 6. Pre-Emptive Browser Search Intent Scanner
+### 8. Pre-Emptive Browser Search Intent Scanner
 * **Attack Scenario:** Users search Google for customer care numbers, loan approvals, or travel bookings and click sponsored scam ads containing fake helpline numbers.
 * **EdgeGuard AI Intervention:** Inspects browser query intents and displays pre-emptive safety cards warning users before they dial fraudulent customer care numbers or pay advance booking fees over WhatsApp QR codes.
 
@@ -148,6 +163,9 @@ graph TD
 
 | Threat Category | Attack Vector Description | Example Indicators |
 | :--- | :--- | :--- |
+| **Fake Instagram / Meta Trading Ads** | Sponsored social media ads on Reels/feeds redirecting to scam Telegram/WhatsApp trading groups. | *"Earn 500% daily returns in our SEBI certified Telegram channel", "VIP Stock Tips"* |
+| **Universal APK Frauds & Trojans** | Disguised APK malware (e-Challan, wedding invitations, PM Kisan) hijacking device permissions. | *"Unpaid traffic challan: echallan.apk", "Wedding_Card.apk", "security_update.apk"* |
+| **WhatsApp & Telegram Group Phishing** | Mass broadcast phishing links, free recharge coupons, and crypto giveaways in community groups. | *"Join urgent group airdrop: claim-free-eth.xyz", "3-month free recharge", "Tap here to claim gift"* |
 | **Electricity Disconnection** | Immediate power shutoff threat directing victims to private phone numbers. | *"Electricity disconnected tonight at 9:30 PM due to unpaid bill"* |
 | **Bank / KYC Suspension** | Threats of bank account, PAN, or debit card deactivation via phishing links. | *"Dear customer, your bank account blocked today due to pending KYC"* |
 | **Fake Lottery & Lucky Draw** | Fabricated KBC or cash prizes demanding advance fees or WhatsApp communication. | *"Congratulations! Won Rs 25 Lakh in KBC Lucky Draw"* |
