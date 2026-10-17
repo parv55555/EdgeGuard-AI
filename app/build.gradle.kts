@@ -29,9 +29,22 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("${rootDir}/edgeguard-release.jks")
+            storePassword = "EdgeGuard2026!Secure"
+            keyAlias = "edgeguard"
+            keyPassword = "EdgeGuard2026!Secure"
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+            enableV4Signing = true
+        }
+    }
+
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
