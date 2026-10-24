@@ -1,6 +1,6 @@
 <!-- programmed by parv -->
 <resources>
     <string name="app_name">EdgeGuard AI</string>
-    <string name="accessibility_service_description">Reads screen content to protect you from scams.</string>
+    <string name="accessibility_service_description">This app uses the AccessibilityService API to scan on-screen text in messaging apps to detect cyber fraud and scam messages in real time. All processing runs 100% offline on your device. No message data or personal information is ever uploaded, stored, or shared.</string>
 </resources>
 

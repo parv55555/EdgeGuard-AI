@@ -2,11 +2,6 @@ package com.parv.safetexts
 
 import android.accessibilityservice.AccessibilityService
 import android.util.Log
-import java.net.HttpURLConnection
-import java.net.URL
-import org.json.JSONObject
-import org.json.JSONArray
-import java.time.Instant
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.os.Handler
@@ -31,6 +26,25 @@ class MessageReaderAccessibilityService : AccessibilityService() {
     private var cachedIsNonChatScreen: Boolean = false
     private val knownGroupTitles = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val knownVerifiedAccounts = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    // Strictly Read-Only Event Debounce and Screen State Hash Caching
+    private var lastEventTimestamp: Long = 0L
+    private var lastScannedContentHash: Int = 0
+    private val DEBOUNCE_INTERVAL_MS = 200L
+    private val recentScannedHashes = java.util.Collections.synchronizedSet(
+        object : java.util.LinkedHashSet<Int>() {
+            override fun add(element: Int): Boolean {
+                if (size > 60) {
+                    val it = iterator()
+                    if (it.hasNext()) {
+                        it.next()
+                        it.remove()
+                    }
+                }
+                return super.add(element)
+            }
+        }
+    )
 
     companion object {
         var allowNextInstallUntilTime: Long = 0L
@@ -64,40 +78,25 @@ class MessageReaderAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
 
+        // 1. Debounce check (200ms) to prevent high-frequency event spam
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastEventTimestamp < DEBOUNCE_INTERVAL_MS) {
+            return
+        }
+        lastEventTimestamp = currentTime
+
         val packageName = event.packageName?.toString() ?: return
 
-        // --- UNIVERSAL APK CLICK & DOWNLOAD INTERCEPTOR ---
-        if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
-            val apkFound = findApkInEventOrSource(event)
-            if (apkFound != null && packageName != "com.parv.safetexts") {
-                Log.d("MessageReader", "User clicked on APK: $apkFound in $packageName")
-                val appTitle = when {
-                    packageName.contains("whatsapp") -> "WhatsApp"
-                    packageName.contains("chrome") -> "Chrome"
-                    packageName.contains("sbrowser") -> "Samsung Internet"
-                    packageName.contains("telegram") -> "Telegram"
-                    packageName.contains("myfiles") -> "My Files"
-                    else -> "Download Shield"
-                }
-                val alert = MessageEntity(
-                    sender = appTitle,
-                    content = "Malicious APK file: $apkFound",
-                    appName = packageName,
-                    analysisResult = "Alert",
-                    scamProbability = 1.0f
-                )
-                ScamAnalyzer.getInstance(this).analyzeMessage(alert, isApk = true)
-                return
-            }
+        // 2. Restrict to window state and content changes (No click or keylogger tracking)
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+            return
         }
 
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || 
-            event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
-            event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+            event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
             
             // LAYER 1: Pre-Install Shield for Malicious APKs
-            // CRITICAL: Only match actual system package installers!
-            // NEVER include "android" (system resolver / open-with sheet) or MyFiles or document viewers!
             val isPackageInstaller = packageName.contains("packageinstaller") &&
                                      packageName != "android" &&
                                      !packageName.contains("myfiles")
@@ -105,25 +104,18 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             if (isPackageInstaller) {
                 val rootNode = rootInActiveWindow
                 if (rootNode != null && isInstallScreen(rootNode)) {
-                    val currentTime = System.currentTimeMillis()
                     if (currentTime < allowNextInstallUntilTime) {
-                        // User explicitly bypassed the warning in the last 60 seconds
                         return
                     }
 
                     if (currentTime - lastPreInstallWarningTime > 3000L) {
                         lastPreInstallWarningTime = currentTime
                         
-                        // CRITICAL: Android 12+ prevents overlays from drawing on top of the Package Installer to prevent clickjacking.
-                        // Therefore, the installer will hide our overlay.
-                        // To fix this, we force close the package installer by pressing BACK automatically!
-                        performGlobalAction(GLOBAL_ACTION_BACK)
-                        
-                        // Log it to the database so the user can review their history later
+                        // Enforce strictly read-only behavior: Zero gesture/action injection
                         val alert = MessageEntity(
                             sender = "System Alert",
                             content = "Pre-Install Shield triggered: Prevented user from installing an unverified APK outside of Google Play.",
-                            appName = "SafeConvos",
+                            appName = "EdgeGuard AI",
                             analysisResult = "Alert",
                             scamProbability = 1.0f
                         )
@@ -131,11 +123,10 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                             AppDatabase.getDatabase(this@MessageReaderAccessibilityService).messageDao().insertMessage(alert)
                         }
                         
-                        // Add a slight delay to allow the package installer to close before popping the overlay
-                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        Handler(Looper.getMainLooper()).post {
                             val isSevere = ContactUtils.isUserOnCall(this@MessageReaderAccessibilityService)
                             OverlayUtils.showPreInstallWarningOverlay(this, isSevere)
-                        }, 500)
+                        }
                     }
                 }
             }
@@ -1078,10 +1069,17 @@ class MessageReaderAccessibilityService : AccessibilityService() {
 
                     if (!contextInfo.isInsideQuote && !contextInfo.isSent && (!contextInfo.isInsideGroup || isApk)) {
                         if (chatTitle.isEmpty() || text.trim() != chatTitle.trim()) {
+                            val trimmedContent = text.trim()
+                            val contentHash = (packageName + ":" + trimmedContent).hashCode()
+                            if (contentHash == lastScannedContentHash || !recentScannedHashes.add(contentHash)) {
+                                return
+                            }
+                            lastScannedContentHash = contentHash
+
                             val finalSender = if (chatTitle.isNotEmpty()) chatTitle else "Screen Reader"
                             val message = MessageEntity(
                                 sender = finalSender,
-                                content = text.trim(),
+                                content = trimmedContent,
                                 appName = packageName
                             )
                             ScamAnalyzer.getInstance(this).analyzeMessage(message, isApk = isApk, isFakeCredit = if (contextInfo.isInsideGroup) false else isFakeCredit)
