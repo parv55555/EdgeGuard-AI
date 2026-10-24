@@ -25,6 +25,7 @@ Unlike conventional anti-fraud tools that stream user messages to remote servers
 - [Running Automated Tests](#-running-automated-tests)
 - [Sample Data & Test Cases](#-sample-data--test-cases)
 - [Technical Design Document](#-technical-design-document)
+- [Privacy Policy & Zero-Cloud Guarantee](#-privacy-policy--zero-cloud-guarantee)
 - [License & Attribution](#-license--attribution)
 
 ---
@@ -344,6 +345,14 @@ val result = ScamAnalyzer.checkFastDeterministicScam(
 A full architectural specification covering the mathematical formulation of on-device quantization, thread synchronization, Room database schema, and security threat modeling is available in:
 
 👉 [**Technical Design Document (`TECHNICAL_DESIGN_DOCUMENT.md`)**](./TECHNICAL_DESIGN_DOCUMENT.md)
+
+---
+
+## 🔒 Privacy Policy & Zero-Cloud Guarantee
+
+EdgeGuard AI is engineered strictly for **100% on-device inference** with **zero cloud egress**. No private chat messages, call logs, contacts, OTP verification codes, or behavioral telemetry ever leave the mobile device.
+
+👉 **[Read the Full Privacy Policy](https://parv55555.github.io/EdgeGuard-AI-website/privacy-policy.html)**
 
 ---
 
