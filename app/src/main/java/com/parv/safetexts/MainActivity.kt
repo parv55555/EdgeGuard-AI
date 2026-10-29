@@ -771,6 +771,8 @@ fun PrivacyScreen(navController: NavController) {
                 "- Overlay Permission: Used to display the scam warning immediately over other apps.\n\n" +
                 "Data Retention:\n" +
                 "Scanned messages are stored in a local encrypted database on your device and are automatically deleted after 12 days to conserve space and maintain privacy.\n\n" +
+                "Contact & Support:\n" +
+                "For privacy inquiries, security reports, or technical support, please contact us at parv335@gmail.com.\n\n" +
                 "Changes to Privacy Policy:\n" +
                 "We reserve the right to modify this privacy policy at any time, so please review it frequently.",
                 style = MaterialTheme.typography.bodyMedium,
