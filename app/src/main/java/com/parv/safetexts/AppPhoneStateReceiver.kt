@@ -37,7 +37,7 @@ class AppPhoneStateReceiver : BroadcastReceiver() {
                             val alert = MessageEntity(
                                 sender = "System Alert",
                                 content = "Warning triggered for potential OTP Theft. Unknown telecom call received shortly after an OTP.",
-                                appName = "EdgeGuard AI",
+                                appName = "EdgeGuard",
                                 analysisResult = "Alert",
                                 scamProbability = 1.0f
                             )

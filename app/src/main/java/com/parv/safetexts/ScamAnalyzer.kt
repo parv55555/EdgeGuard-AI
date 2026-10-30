@@ -286,7 +286,7 @@ class ScamAnalyzer private constructor(private val context: Context) {
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle("⚠️ SCAM WARNING: ${message.sender}")
             .setContentText("Potential scam intercepted from ${message.sender}")
-            .setStyle(Notification.BigTextStyle().bigText("EdgeGuard AI intercepted a potential scam from ${message.sender} (${message.appName}). Open EdgeGuard AI to view details."))
+            .setStyle(Notification.BigTextStyle().bigText("EdgeGuard intercepted a potential scam from ${message.sender} (${message.appName}). Open EdgeGuard to view details."))
             .setPriority(Notification.PRIORITY_HIGH)
             .setDefaults(Notification.DEFAULT_ALL)
             .setAutoCancel(true)

@@ -60,7 +60,7 @@ class AppInstallReceiver : BroadcastReceiver() {
                         val alert = MessageEntity(
                             sender = "System Alert",
                             content = "Post-Install Watchdog triggered: Sideloaded app ($packageName) was installed from an untrusted source.",
-                            appName = "EdgeGuard AI",
+                            appName = "EdgeGuard",
                             analysisResult = "Alert",
                             scamProbability = 1.0f
                         )
@@ -110,7 +110,7 @@ class AppInstallReceiver : BroadcastReceiver() {
                 val alert = MessageEntity(
                     sender = "System Alert",
                     content = "RAT Watchdog triggered: User installed a blacklisted Remote Access app ($packageName) during/after an unknown call.",
-                    appName = "EdgeGuard AI",
+                    appName = "EdgeGuard",
                     analysisResult = "Alert",
                     scamProbability = 1.0f
                 )

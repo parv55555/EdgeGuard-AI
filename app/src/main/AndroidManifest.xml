@@ -58,7 +58,7 @@
 
         <service
             android:name=".MessageReaderAccessibilityService"
-            android:label="EdgeGuard AI Message Reader"
+            android:label="EdgeGuard Message Reader"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
             <intent-filter>

@@ -115,7 +115,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                         val alert = MessageEntity(
                             sender = "System Alert",
                             content = "Pre-Install Shield triggered: Prevented user from installing an unverified APK outside of Google Play.",
-                            appName = "EdgeGuard AI",
+                            appName = "EdgeGuard",
                             analysisResult = "Alert",
                             scamProbability = 1.0f
                         )

@@ -85,7 +85,7 @@ class ScamDetectionService : NotificationListenerService() {
                                 val alert = MessageEntity(
                                     sender = "System Alert",
                                     content = "Warning triggered for potential Digital Arrest. User opened banking app during a long video call.",
-                                    appName = "EdgeGuard AI",
+                                    appName = "EdgeGuard",
                                     analysisResult = "Alert",
                                     scamProbability = 1.0f
                                 )
@@ -266,7 +266,7 @@ class ScamDetectionService : NotificationListenerService() {
                     val alert = MessageEntity(
                         sender = browserName,
                         content = "Blocked Browser Scam: $title - $text",
-                        appName = "EdgeGuard AI",
+                        appName = "EdgeGuard",
                         analysisResult = "Alert",
                         scamProbability = 1.0f
                     )
@@ -342,7 +342,7 @@ class ScamDetectionService : NotificationListenerService() {
                                 val alert = MessageEntity(
                                     sender = "System Alert",
                                     content = "Warning triggered for potential Sextortion. Unknown video call received.",
-                                    appName = "EdgeGuard AI",
+                                    appName = "EdgeGuard",
                                     analysisResult = "Alert",
                                     scamProbability = 1.0f
                                 )
@@ -361,7 +361,7 @@ class ScamDetectionService : NotificationListenerService() {
                                 val alert = MessageEntity(
                                     sender = "System Alert",
                                     content = "Warning triggered for potential OTP Theft. Unknown WhatsApp call received shortly after an OTP.",
-                                    appName = "EdgeGuard AI",
+                                    appName = "EdgeGuard",
                                     analysisResult = "Alert",
                                     scamProbability = 1.0f
                                 )
@@ -382,7 +382,7 @@ class ScamDetectionService : NotificationListenerService() {
                                 val alert = MessageEntity(
                                     sender = "System Alert",
                                     content = "Warning triggered for potential Sextortion. Unknown video call received.",
-                                    appName = "EdgeGuard AI",
+                                    appName = "EdgeGuard",
                                     analysisResult = "Alert",
                                     scamProbability = 1.0f
                                 )
@@ -454,7 +454,7 @@ class ScamDetectionService : NotificationListenerService() {
                     val alert = MessageEntity(
                         sender = "System Alert",
                         content = "Warning triggered for potential OTP Theft. High-value OTP arrived during/after an unknown call.",
-                        appName = "EdgeGuard AI",
+                        appName = "EdgeGuard",
                         analysisResult = "Alert",
                         scamProbability = 1.0f
                     )

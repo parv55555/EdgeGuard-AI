@@ -370,7 +370,7 @@ fun PermissionsScreen(navController: NavController) {
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                "Developed by EdgeGuard AI in collaboration with Indore cyber cell. AI model is trained over the scam patterns observed in the recent complaints in Indore.",
+                "Developed by EdgeGuard in collaboration with Indore cyber cell. AI model is trained over the scam patterns observed in the recent complaints in Indore.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -474,7 +474,7 @@ fun HomeScreen(navController: NavController) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("EdgeGuard AI", fontWeight = FontWeight.Bold, fontSize = 30.sp)
+                    Text("EdgeGuard", fontWeight = FontWeight.Bold, fontSize = 30.sp)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (isAllGranted && messages.isNotEmpty()) {
                             val scope = rememberCoroutineScope()
@@ -723,12 +723,12 @@ fun TermsScreen(navController: NavController) {
             Text("Terms and Conditions", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                "Welcome to EdgeGuard AI. By using our app, you agree to the following terms:\n\n" +
+                "Welcome to EdgeGuard. By using our app, you agree to the following terms:\n\n" +
                 "1. Acceptance of Terms\nBy accessing and using this application, you accept and agree to be bound by the terms and provision of this agreement.\n\n" +
-                "2. Description of Service\nEdgeGuard AI provides local on-device scanning of incoming notifications to detect potential scams using artificial intelligence.\n\n" +
+                "2. Description of Service\nEdgeGuard provides local on-device scanning of incoming notifications to detect potential scams using artificial intelligence.\n\n" +
                 "3. Privacy & Data\nAll message scanning is performed locally on your device. We do not transmit your private messages to any external servers.\n\n" +
                 "4. Disclaimer of Warranties\nThe app is provided \"as is\". We do not guarantee that all scams will be detected, nor do we take responsibility for false positives.\n\n" +
-                "5. Limitation of Liability\nEdgeGuard AI and its developers shall not be liable for any direct, indirect, incidental, or consequential damages resulting from the use or inability to use the service.",
+                "5. Limitation of Liability\nEdgeGuard and its developers shall not be liable for any direct, indirect, incidental, or consequential damages resulting from the use or inability to use the service.",
                 style = MaterialTheme.typography.bodyMedium,
                 lineHeight = 24.sp
             )
@@ -764,7 +764,7 @@ fun PrivacyScreen(navController: NavController) {
             Text(
                 "Your privacy is our primary concern.\n\n" +
                 "On-Device Processing:\n" +
-                "EdgeGuard AI was built with a strict privacy-first architecture. All machine learning inference and message analysis happens locally on your phone using TensorFlow Lite. We use our highly trained A0908i model for this purpose. Your messages never leave your device.\n\n" +
+                "EdgeGuard was built with a strict privacy-first architecture. All machine learning inference and message analysis happens locally on your phone using TensorFlow Lite. We use our highly trained A0908i model for this purpose. Your messages never leave your device.\n\n" +
                 "Permissions:\n" +
                 "- Notification Access: Required strictly to read incoming messages for analysis.\n" +
                 "- Contacts Access: Used locally to determine if a sender is known to you.\n" +
@@ -845,10 +845,10 @@ fun WelcomeScreen(navController: NavController, sharedPref: SharedPreferences) {
                 tint = MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(24.dp))
-            Text("EdgeGuard AI", fontWeight = FontWeight.Bold, fontSize = 36.sp)
+            Text("EdgeGuard", fontWeight = FontWeight.Bold, fontSize = 36.sp)
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                "Welcome to EdgeGuard AI! Our on-device AI scans incoming notifications to detect scams, protecting you entirely locally. Your messages never leave your phone.",
+                "Welcome to EdgeGuard! Our on-device AI scans incoming notifications to detect scams, protecting you entirely locally. Your messages never leave your phone.",
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
