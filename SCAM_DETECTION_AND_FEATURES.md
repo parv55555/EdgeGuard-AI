@@ -195,3 +195,4 @@ This document provides a comprehensive inventory of all system features, scam ty
 ---
 
 *All detections execute **100% offline** on the user's device processor without cloud egress.*
+

@@ -17,6 +17,9 @@ import android.app.AppOpsManager
 import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.draw.clip
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -474,7 +477,17 @@ fun HomeScreen(navController: NavController) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("EdgeGuard", fontWeight = FontWeight.Bold, fontSize = 30.sp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_edgeguard_logo),
+                            contentDescription = "EdgeGuard Logo",
+                            modifier = Modifier.size(36.dp).clip(RoundedCornerShape(8.dp))
+                        )
+                        Text("EdgeGuard", fontWeight = FontWeight.Bold, fontSize = 28.sp)
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (isAllGranted && messages.isNotEmpty()) {
                             val scope = rememberCoroutineScope()
@@ -838,11 +851,10 @@ fun WelcomeScreen(navController: NavController, sharedPref: SharedPreferences) {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(
-                Icons.Default.Security, 
-                contentDescription = "Security Icon", 
-                modifier = Modifier.size(80.dp), 
-                tint = MaterialTheme.colorScheme.primary
+            Image(
+                painter = painterResource(id = R.drawable.ic_edgeguard_logo), 
+                contentDescription = "EdgeGuard Logo", 
+                modifier = Modifier.size(88.dp).clip(RoundedCornerShape(20.dp))
             )
             Spacer(modifier = Modifier.height(24.dp))
             Text("EdgeGuard", fontWeight = FontWeight.Bold, fontSize = 36.sp)
