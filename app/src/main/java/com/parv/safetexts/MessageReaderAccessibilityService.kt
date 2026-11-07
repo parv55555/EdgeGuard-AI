@@ -7,6 +7,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.os.Handler
 import android.os.Looper
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 class MessageReaderAccessibilityService : AccessibilityService() {
 
@@ -16,6 +17,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
     private var lastBrowserJumpTime: Long = 0L
     private var lastDMJumpTagTime: Long = 0L
     private var lastPreInstallWarningTime: Long = 0L
+    private var lastApkDownloadWarningTime: Long = 0L
     private var lastScreenCheckTime: Long = 0L
     private var cachedPackageName: String = ""
     private var cachedChatTitle: String = ""
@@ -27,24 +29,10 @@ class MessageReaderAccessibilityService : AccessibilityService() {
     private val knownGroupTitles = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val knownVerifiedAccounts = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
-    // Strictly Read-Only Event Debounce and Screen State Hash Caching
+    // Viewport tracking for re-alerting when messages enter the screen
     private var lastEventTimestamp: Long = 0L
-    private var lastScannedContentHash: Int = 0
     private val DEBOUNCE_INTERVAL_MS = 200L
-    private val recentScannedHashes = java.util.Collections.synchronizedSet(
-        object : java.util.LinkedHashSet<Int>() {
-            override fun add(element: Int): Boolean {
-                if (size > 60) {
-                    val it = iterator()
-                    if (it.hasNext()) {
-                        it.next()
-                        it.remove()
-                    }
-                }
-                return super.add(element)
-            }
-        }
-    )
+    private val previouslyVisibleMessageHashes = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
 
     companion object {
         var allowNextInstallUntilTime: Long = 0L
@@ -62,6 +50,22 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             "security", "two-step verification", "change number", "request account info", "delete my account",
             "avatar", "theme", "chat backup", "chat history", "security notifications"
         )
+        private val JUNK_UI_TEXTS = setOf(
+            "settings", "account", "privacy", "avatar", "chats", "notifications", "storage and data",
+            "app language", "help", "invite a friend", "wallpaper", "media, links, and docs", "search",
+            "mute notifications", "disappearing messages", "more", "view contact", "clear chat", "export chat",
+            "add shortcut", "security notifications", "two-step verification", "change number", "request account info",
+            "delete my account", "passkeys", "email address", "last seen and online", "profile photo", "about",
+            "status", "read receipts", "default message timer", "groups", "live location", "calls", "blocked contacts",
+            "fingerprint lock", "chat lock", "theme", "chat backup", "chat history", "enter is send",
+            "media visibility", "font size", "keep chats archived", "transfer chats", "conversation tones",
+            "vibrate", "popup notification", "light", "high priority notifications", "reaction notifications",
+            "manage storage", "network usage", "use less data for calls", "proxy", "media auto-download",
+            "when using mobile data", "when connected on wi-fi", "when roaming", "photo upload quality",
+            "help center", "contact us", "terms and privacy policy", "app info", "screen reader", "whatsapp",
+            "messages", "conversations", "contacts", "archived", "spam and blocked", "security",
+            "general", "advanced", "sim card", "automatic preview", "swipe actions"
+        )
         private val IGNORED_EXACT_WORDS = setOf(
             "message", "forwarded", "forwarded many times",
             "document", "camera", "gallery", "audio", "location", "contact", "poll",
@@ -73,24 +77,70 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             "chats", "updates", "communities", "calls", "settings", "search", "unread", "favorites", "groups",
             "account", "privacy", "notifications", "storage and data", "app language", "help", "invite a friend"
         )
+        private val DEDICATED_BROWSER_PACKAGES = setOf(
+            "com.android.chrome",
+            "com.sec.android.app.sbrowser",
+            "org.mozilla.firefox",
+            "com.microsoft.emmx",
+            "com.brave.browser",
+            "com.opera.browser",
+            "com.opera.mini.native",
+            "com.duckduckgo.mobile.android",
+            "com.vivaldi.browser",
+            "com.UCMobile.intl"
+        )
+        private val SOCIAL_AD_PACKAGES = setOf(
+            "com.facebook.katana",
+            "com.facebook.lite",
+            "com.instagram.android",
+            "com.instagram.lite"
+        )
+        private val BROWSER_PACKAGES = DEDICATED_BROWSER_PACKAGES + SOCIAL_AD_PACKAGES
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        try {
+            val info = serviceInfo
+            info.packageNames = null // Dynamically ensure listening to all packages globally
+            info.flags = info.flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or
+                         android.accessibilityservice.AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
+                         android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+            serviceInfo = info
+            Log.d("MessageReader", "Accessibility service connected with global package listening and full view visibility")
+        } catch (e: Exception) {
+            Log.e("MessageReader", "Error configuring service info", e)
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
 
-        // 1. Debounce check (200ms) to prevent high-frequency event spam
+        val packageName = event.packageName?.toString() ?: return
+        val isBrowser = packageName in BROWSER_PACKAGES
+        val isDedicatedBrowser = packageName in DEDICATED_BROWSER_PACKAGES
+
+        // INTERCEPT ON CLICK: Click events bypass debounce and check for APK download/install clicks across all apps
+        if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+            handleViewClickedForApkDownload(event, packageName)
+            return
+        }
+
+        // Debounce check (200ms) only for high-frequency content/state change events
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastEventTimestamp < DEBOUNCE_INTERVAL_MS) {
             return
         }
         lastEventTimestamp = currentTime
 
-        val packageName = event.packageName?.toString() ?: return
-
-        // 2. Restrict to window state and content changes (No click or keylogger tracking)
+        // Restrict structural scam checks to window state and content changes
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
             event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
             return
+        }
+
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            previouslyVisibleMessageHashes.clear()
         }
 
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || 
@@ -102,13 +152,17 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                                      !packageName.contains("myfiles")
 
             if (isPackageInstaller) {
-                val rootNode = rootInActiveWindow
-                if (rootNode != null && isInstallScreen(rootNode)) {
+                Log.d("MessageReader", "PackageInstaller detected: $packageName, checking install screen...")
+                val rootNode = rootInActiveWindow ?: return
+                val isInstalling = isInstallScreen(rootNode)
+                if (isInstalling) {
+                    Log.d("MessageReader", "PackageInstaller installation screen active! Checking overlay state: isOverlayShowing=${OverlayUtils.isOverlayShowing}, isAlertActive=${ScamAlertActivity.isAlertActive}")
                     if (currentTime < allowNextInstallUntilTime) {
+                        Log.d("MessageReader", "Install whitelisted until $allowNextInstallUntilTime, skipping")
                         return
                     }
 
-                    if (currentTime - lastPreInstallWarningTime > 3000L) {
+                    if (currentTime - lastPreInstallWarningTime > 2000L) {
                         lastPreInstallWarningTime = currentTime
                         
                         // Enforce strictly read-only behavior: Zero gesture/action injection
@@ -140,7 +194,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                     val alert = MessageEntity(
                         sender = "System Alert",
                         content = "Warning triggered for potential Digital Arrest. User opened banking app shortly after a long unknown video call.",
-                        appName = "SafeConvos",
+                        appName = "EdgeGuard",
                         analysisResult = "Alert",
                         scamProbability = 1.0f
                     )
@@ -152,13 +206,6 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             }
 
             // --- LAYER 3: Social Media Scam Funnel Interceptor ---
-            val isBrowser = packageName == "com.android.chrome" || 
-                            packageName == "com.facebook.katana" || 
-                            packageName == "com.facebook.lite" ||
-                            packageName == "com.instagram.android" ||
-                            packageName == "com.instagram.lite" ||
-                            packageName == "com.sec.android.app.sbrowser"
-                            
             val isWhatsAppOrTelegram = packageName == "com.whatsapp" || packageName == "com.whatsapp.w4b" || packageName == "org.telegram.messenger"
             
             val currentTime = System.currentTimeMillis()
@@ -171,36 +218,35 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 previousPackageName = lastPackageName
                 lastPackageName = packageName
                 lastPackageTime = currentTime
+                previouslyVisibleMessageHashes.clear()
             }
 
             // 1. The WhatsApp/Telegram "Join" Shield
-            val wasBrowserPrevious = previousPackageName == "com.android.chrome" || 
-                                     previousPackageName == "com.facebook.katana" || 
-                                     previousPackageName == "com.facebook.lite" ||
-                                     previousPackageName == "com.instagram.android" ||
-                                     previousPackageName == "com.instagram.lite" ||
-                                     previousPackageName == "com.sec.android.app.sbrowser" ||
-                                     previousPackageName == "android" // Intent Resolver
+            val wasBrowserPrevious = previousPackageName in BROWSER_PACKAGES
 
             if (isWhatsAppOrTelegram) {
-                val isDirectJump = wasBrowserPrevious && (currentTime - lastPackageTime < 60000L)
-                val isRecentBrowserActivity = currentTime - lastBrowserJumpTime < 60000L
+                val isDirectJump = wasBrowserPrevious && (currentTime - lastPackageTime < 15000L)
 
-                if (isDirectJump || isRecentBrowserActivity) {
+                if (isDirectJump) {
                     val rootNode = rootInActiveWindow
                     if (rootNode != null) {
-                        val isJoinScreen = checkForJoinGroupUI(rootNode)
-                        if (isJoinScreen) {
-                            Log.d("FunnelInterceptor", "Join Shield Triggered! Preventing user from joining Telegram/WhatsApp group from browser jump.")
-                            triggerScamFunnelOverlay()
-                            lastBrowserJumpTime = 0L // Reset
-                            lastPackageTime = 0L
-                        } else if (isDirectJump) {
-                            // Immediately trigger the DM alert if they jumped directly from an ad/browser to a DM
+                        val alreadyInChat = isChatScreen(rootNode, packageName)
+                        if (!alreadyInChat) {
+                            val isJoinScreen = checkForJoinGroupUI(rootNode)
+                            if (isJoinScreen) {
+                                Log.d("FunnelInterceptor", "Join Shield Triggered! Preventing user from joining Telegram/WhatsApp group from browser jump.")
+                                triggerScamFunnelOverlay()
+                                lastBrowserJumpTime = 0L // Reset
+                                lastPackageTime = 0L
+                            }
+                        } else {
+                            // Immediately trigger the DM alert if they jumped directly from an ad/browser to an unsaved DM
                             val chatTitle = extractBestEffortChatTitle(rootNode, packageName)
-                            if (chatTitle.isNotEmpty() || isChatScreen(rootNode)) {
+                            if (chatTitle.isNotEmpty()) {
                                 // ONLY trigger if it's an unknown number (not in contacts AND looks like a raw phone number with 7+ digits)
-                                val isUnsavedPhoneNumber = !ContactUtils.isContactExists(this@MessageReaderAccessibilityService, chatTitle) && !ContactUtils.isWhatsAppCompanyAccount(chatTitle)
+                                val isUnsavedPhoneNumber = ContactUtils.isRawPhoneNumber(chatTitle) && 
+                                                           !ContactUtils.isContactExists(this@MessageReaderAccessibilityService, chatTitle) && 
+                                                           !ContactUtils.isWhatsAppCompanyAccount(chatTitle)
                                 if (isUnsavedPhoneNumber) {
                                     Log.d("FunnelInterceptor", "DM Jump Shield Triggered! Preventing user from DMing from browser jump.")
                                     triggerScamFunnelOverlay(isDM = true)
@@ -213,31 +259,22 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 }
             }
 
-            // 2. The Link Interceptor & Betting Scanner & APK Download Scanner (Browser scanning)
-            if (isBrowser) {
+            // 2. The Link Interceptor & Betting Scanner & APK Download Dialog Scanner (Browser & Downloader scanning)
+            if (isBrowser || packageName == "android" || packageName.contains("download") || packageName.contains("browser") || packageName.contains("packageinstaller")) {
                 val rootNode = rootInActiveWindow
                 if (rootNode != null) {
-                    checkForBrowserApkDownload(rootNode, packageName)
-                    if (checkForScamFunnel(rootNode)) {
+                    checkForBrowserApkDownloadDialog(rootNode, packageName)
+                    if (isBrowser && checkForScamFunnel(rootNode)) {
                         Log.d("FunnelInterceptor", "Scam Funnel Detected on Screen! Blocking.")
                         triggerScamFunnelOverlay()
+                    }
+                    if (isDedicatedBrowser) {
+                        checkBrowserFraudWebsite(rootNode)
                     }
                 }
 
                 // 3. The Browser Search Intent (Pre-Emptive Warning)
-                val browserPackages = setOf(
-                    "com.android.chrome",
-                    "org.mozilla.firefox",
-                    "com.sec.android.app.sbrowser", // Samsung Internet
-                    "com.microsoft.emmx", // Edge
-                    "com.opera.browser",
-                    "com.opera.mini.native",
-                    "com.brave.browser",
-                    "com.duckduckgo.mobile.android",
-                    "com.vivaldi.browser",
-                    "com.UCMobile.intl"
-                )
-                if (packageName in browserPackages) {
+                if (isDedicatedBrowser) {
                     val rootNode = rootInActiveWindow
                     if (rootNode != null) {
                         if (checkForBookingIntent(rootNode)) {
@@ -258,7 +295,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                                 val alert = com.parv.safetexts.MessageEntity(
                                     sender = "System Alert",
                                     content = "Travel safety alert triggered: User was searching for travel bookings in a web browser.",
-                                    appName = "SafeConvos",
+                                    appName = "EdgeGuard",
                                     analysisResult = "Alert",
                                     scamProbability = 1.0f
                                 )
@@ -285,7 +322,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                                 val loanAlert = com.parv.safetexts.MessageEntity(
                                     sender = "System Alert",
                                     content = "Loan safety alert triggered: User was searching for loans in a web browser.",
-                                    appName = "SafeConvos",
+                                    appName = "EdgeGuard",
                                     analysisResult = "Alert",
                                     scamProbability = 1.0f
                                 )
@@ -312,7 +349,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                                 val jobAlert = com.parv.safetexts.MessageEntity(
                                     sender = "System Alert",
                                     content = "Job safety alert triggered: User was searching for online jobs or tasks in a web browser.",
-                                    appName = "SafeConvos",
+                                    appName = "EdgeGuard",
                                     analysisResult = "Alert",
                                     scamProbability = 1.0f
                                 )
@@ -339,7 +376,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                                 val tradingAlert = com.parv.safetexts.MessageEntity(
                                     sender = "System Alert",
                                     content = "Trading safety alert triggered: User was searching for trading or crypto in a web browser.",
-                                    appName = "SafeConvos",
+                                    appName = "EdgeGuard",
                                     analysisResult = "Alert",
                                     scamProbability = 1.0f
                                 )
@@ -366,7 +403,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                                 val helplineAlert = com.parv.safetexts.MessageEntity(
                                     sender = "System Alert",
                                     content = "Customer care safety alert triggered: User was searching for helplines or customer care in a web browser.",
-                                    appName = "SafeConvos",
+                                    appName = "EdgeGuard",
                                     analysisResult = "Alert",
                                     scamProbability = 1.0f
                                 )
@@ -379,6 +416,27 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                     }
                 }
             }
+
+            // --- LAYER 5: Storage & File Manager APK Interceptor (File Lists, Downloads & Storage Explorers) ---
+            if (isFileManagerOrDownloadApp(packageName)) {
+                val rootNode = rootInActiveWindow
+                if (rootNode != null) {
+                    scanVisibleApkFilesInFileManager(rootNode, packageName)
+                }
+            }
+        }
+
+        // Never analyze EdgeGuard itself
+        if (packageName == this.packageName) {
+            return
+        }
+
+        // Never analyze system settings or preference apps
+        if (packageName.contains("settings") || packageName.contains("preference")) {
+            cachedPackageName = packageName
+            cachedChatTitle = ""
+            cachedIsActualChat = false
+            return
         }
 
         // Filter for messaging apps
@@ -391,122 +449,77 @@ class MessageReaderAccessibilityService : AccessibilityService() {
 
         if (isWhatsApp || isTelegram || isSms) {
             val rootNode = rootInActiveWindow ?: return
-            
-            val currentTime = System.currentTimeMillis()
+
+            // 1. HARD BLOCK ON SETTINGS: If user opened Settings within messaging app, abort immediately!
+            if (isSettingsScreen(rootNode, packageName)) {
+                Log.d("MessageReader", "Settings screen detected in $packageName. Skipping message analysis.")
+                cachedChatTitle = ""
+                cachedIsActualChat = false
+                previouslyVisibleMessageHashes.clear()
+                return
+            }
+
+            // 2. FRESH CHECK: Is this ACTUALLY a chat conversation screen right now?
+            val isActualChat = isChatScreen(rootNode, packageName)
+            cachedIsActualChat = isActualChat
+            if (!isActualChat) {
+                cachedChatTitle = ""
+                previouslyVisibleMessageHashes.clear()
+                return
+            }
+
+            // 3. EXTRACT CHAT TITLE FROM HEADER:
             val currentChatTitle = extractBestEffortChatTitle(rootNode, packageName)
-            val isWindowStateChange = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
-            val isTitleChanged = currentChatTitle.isNotEmpty() && currentChatTitle != cachedChatTitle
-            val isPackageChanged = packageName != cachedPackageName
-            val shouldRefreshScreenState = isWindowStateChange || 
-                                           isPackageChanged || 
-                                           isTitleChanged ||
-                                           (currentTime - lastScreenCheckTime > 500L)
+            if (currentChatTitle.isEmpty() || NON_CHAT_TITLES.contains(currentChatTitle.lowercase().trim())) {
+                cachedChatTitle = ""
+                previouslyVisibleMessageHashes.clear()
+                return
+            }
+            if (currentChatTitle != cachedChatTitle) {
+                previouslyVisibleMessageHashes.clear()
+            }
+            cachedChatTitle = currentChatTitle
 
-            if (shouldRefreshScreenState) {
-                cachedPackageName = packageName
-                if (isTitleChanged || cachedChatTitle.isEmpty()) {
-                    cachedChatTitle = currentChatTitle
-                }
-                cachedIsActualChat = isChatScreen(rootNode, packageName)
-                
-                // If this chat title was already verified as a group, KEEP IT AS A GROUP FOREVER!
-                val isKnownGroup = (currentChatTitle.isNotEmpty() && knownGroupTitles.contains(currentChatTitle)) ||
-                                   (cachedChatTitle.isNotEmpty() && knownGroupTitles.contains(cachedChatTitle))
-
-                if (isKnownGroup) {
-                    cachedIsGroup = true
-                } else if (cachedIsActualChat) {
-                    val detectedGroup = isGroupChat(rootNode, packageName, cachedChatTitle)
-                    if (detectedGroup) {
-                        cachedIsGroup = true
-                        if (cachedChatTitle.isNotEmpty()) knownGroupTitles.add(cachedChatTitle)
-                        if (currentChatTitle.isNotEmpty()) knownGroupTitles.add(currentChatTitle)
-                    } else if (isTitleChanged || isPackageChanged) {
-                        // Only reset to false if user switched conversations or packages!
-                        cachedIsGroup = false
-                    }
-                    // If same conversation, do NOT reset cachedIsGroup from true to false!
-                } else {
-                    cachedIsGroup = false
-                }
-
-                // Check if this chat title was already verified as a verified blue-tick account:
-                val isKnownVerified = (currentChatTitle.isNotEmpty() && knownVerifiedAccounts.contains(currentChatTitle)) ||
-                                      (cachedChatTitle.isNotEmpty() && knownVerifiedAccounts.contains(cachedChatTitle))
-
-                if (isKnownVerified) {
-                    cachedIsVerifiedAccount = true
-                } else if (cachedIsActualChat && isWhatsApp) {
-                    val detectedVerified = isVerifiedWhatsAppAccount(rootNode, cachedChatTitle.ifEmpty { currentChatTitle })
-                    if (detectedVerified) {
-                        cachedIsVerifiedAccount = true
-                        if (cachedChatTitle.isNotEmpty()) knownVerifiedAccounts.add(cachedChatTitle)
-                        if (currentChatTitle.isNotEmpty()) knownVerifiedAccounts.add(currentChatTitle)
-                    } else if (isTitleChanged || isPackageChanged) {
-                        cachedIsVerifiedAccount = false
-                    }
-                } else {
-                    cachedIsVerifiedAccount = false
-                }
-
-                cachedIsProfileScreen = if (cachedIsActualChat) isProfileScreen(rootNode) else false
-                cachedIsNonChatScreen = cachedChatTitle.isNotEmpty() && NON_CHAT_TITLES.contains(cachedChatTitle.lowercase().trim())
-                lastScreenCheckTime = currentTime
-
-                if (cachedChatTitle.isNotEmpty() && isWhatsApp) {
-                    val prefs = getSharedPreferences("safetexts_prefs", android.content.Context.MODE_PRIVATE)
-                    val intentTime = prefs.getLong("booking_intent_timestamp", 0L)
-                    if (intentTime > 0 && currentTime - intentTime < 30 * 60 * 1000) {
-                        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                            val dao = AppDatabase.getDatabase(this@MessageReaderAccessibilityService).chatContextDao()
-                            dao.insertOrUpdate(ChatContextEntity(cachedChatTitle, "BOOKING_SCAM_RISK", currentTime))
-                        }
-                        prefs.edit().remove("booking_intent_timestamp").apply()
-                        Log.d("FunnelInterceptor", "Temporal Link: Chat '$cachedChatTitle' tagged as BOOKING_SCAM_RISK")
-                    }
-                }
+            // 4. CHECK FOR PROFILE / CONTACT INFO SCREEN:
+            if (isProfileScreen(rootNode)) {
+                return
             }
 
-            // Real-time WhatsApp verified account detection safety check:
-            var isVerified = cachedIsVerifiedAccount || 
-                             (cachedChatTitle.isNotEmpty() && knownVerifiedAccounts.contains(cachedChatTitle)) ||
-                             (currentChatTitle.isNotEmpty() && knownVerifiedAccounts.contains(currentChatTitle))
-            if (isWhatsApp && cachedIsActualChat && !isVerified) {
-                if (isVerifiedWhatsAppAccount(rootNode, cachedChatTitle.ifEmpty { currentChatTitle })) {
-                    isVerified = true
-                    cachedIsVerifiedAccount = true
-                    if (cachedChatTitle.isNotEmpty()) knownVerifiedAccounts.add(cachedChatTitle)
-                    if (currentChatTitle.isNotEmpty()) knownVerifiedAccounts.add(currentChatTitle)
-                }
+            // 5. GROUP AND VERIFIED ACCOUNT CHECKS:
+            if (ContactUtils.isTrustedSender(this, currentChatTitle)) {
+                Log.d("MessageReader", "Skipping trusted sender: '$currentChatTitle'")
+                return
             }
 
-            // Real-time WhatsApp group detection safety check:
-            var isGroup = cachedIsGroup || (cachedChatTitle.isNotEmpty() && knownGroupTitles.contains(cachedChatTitle))
-            if (isWhatsApp && cachedIsActualChat && !isGroup && !isVerified) {
-                if (isGroupChat(rootNode, packageName, cachedChatTitle)) {
-                    isGroup = true
-                    cachedIsGroup = true
-                    if (cachedChatTitle.isNotEmpty()) knownGroupTitles.add(cachedChatTitle)
-                }
+            val isKnownVerified = knownVerifiedAccounts.contains(currentChatTitle)
+            val isVerified = isKnownVerified || (isWhatsApp && isVerifiedWhatsAppAccount(rootNode, currentChatTitle))
+            if (isVerified) {
+                knownVerifiedAccounts.add(currentChatTitle)
+                Log.d("MessageReader", "Skipping verified WhatsApp account: '$currentChatTitle'")
+                return
             }
 
-            if (cachedIsActualChat && !cachedIsProfileScreen && !cachedIsNonChatScreen) {
-                val effectiveTitle = cachedChatTitle.ifEmpty { currentChatTitle }
-                val isAlphabetSender = isWhatsApp && effectiveTitle.isNotEmpty() && 
-                    (ContactUtils.isAlphabetOrAlphanumeric(effectiveTitle) || ContactUtils.isContactExists(this, effectiveTitle))
+            val isKnownGroup = knownGroupTitles.contains(currentChatTitle)
+            val isGroup = isKnownGroup || isGroupChat(rootNode, packageName, currentChatTitle)
+            if (isGroup) {
+                knownGroupTitles.add(currentChatTitle)
+            }
 
-                if (isVerified) {
-                    // VERIFIED BLUE TICK ACCOUNT: DO NOT SCAN AT ALL!
-                    Log.d("MessageReader", "Skipping verified WhatsApp account: '$cachedChatTitle'")
-                } else if (isAlphabetSender) {
-                    // Sender name is in Alphabet / Alphanumeric instead of phone number -> DO NOT SCAN!
-                    // Only scan for malicious .apk files if present!
-                    scanForApksOnly(rootNode, packageName, effectiveTitle)
-                } else if (isGroup) {
-                    // WhatsApp & Telegram groups: ONLY scan for malicious .apk files, NEVER read or alert on chat text!
-                    scanForApksOnly(rootNode, packageName, cachedChatTitle)
+            val isAlphabetSender = (isWhatsApp || isSms) && 
+                (ContactUtils.isAlphabetOrAlphanumeric(currentChatTitle) || ContactUtils.isContactExists(this, currentChatTitle) || !ContactUtils.isRawPhoneNumber(currentChatTitle))
+
+            // 6. STRICTLY SCAN CHAT MESSAGES ONLY (ONLY THE CHAT PART):
+            // Toolbars, popup menus (3 dots), compose input bars, and settings are NEVER scanned!
+            val messageList = findMessageListContainer(rootNode, packageName)
+            if (messageList != null) {
+                if (isAlphabetSender || isGroup) {
+                    // Alphabet senders or groups: ONLY scan for malicious .apk files, never regular chat text!
+                    scanContainerForApksOnly(messageList, packageName, currentChatTitle)
                 } else {
-                    extractTextFromNode(rootNode, packageName, cachedChatTitle)
+                    scanContainerForMessages(messageList, packageName, currentChatTitle)
+                }
+                if (messageList != rootNode) {
+                    messageList.recycle()
                 }
             }
         }
@@ -787,50 +800,95 @@ class MessageReaderAccessibilityService : AccessibilityService() {
         return false
     }
 
+    private fun isSettingsScreen(rootNode: AccessibilityNodeInfo, packageName: String): Boolean {
+        if (packageName.contains("settings") || packageName.contains("preferences")) {
+            return true
+        }
+
+        val titleNodes = mutableListOf<AccessibilityNodeInfo>()
+        val titleIds = listOf(
+            "$packageName:id/action_bar_title",
+            "$packageName:id/title",
+            "$packageName:id/toolbar",
+            "android:id/title",
+            "android:id/action_bar_title"
+        )
+        for (id in titleIds) {
+            val found = rootNode.findAccessibilityNodeInfosByViewId(id)
+            if (!found.isNullOrEmpty()) {
+                titleNodes.addAll(found)
+            }
+        }
+
+        for (node in titleNodes) {
+            val text = node.text?.toString()?.lowercase()?.trim() ?: ""
+            if (text == "settings" || text == "messages settings" || text == "chat settings" ||
+                text == "app settings" || text == "paramètres" || text == "ajustes" || text == "einstellungen") {
+                titleNodes.forEach { it.recycle() }
+                return true
+            }
+        }
+        titleNodes.forEach { it.recycle() }
+
+        val hasEntry = hasViewId(rootNode, "$packageName:id/entry") || 
+                       hasViewId(rootNode, "com.whatsapp:id/entry") || 
+                       hasViewId(rootNode, "com.whatsapp.w4b:id/entry") ||
+                       hasViewId(rootNode, "org.telegram.messenger:id/chat_text_edit")
+
+        if (!hasEntry) {
+            var settingsKeywordCount = 0
+            val checkTexts = mutableListOf<String>()
+            collectTexts(rootNode, checkTexts, maxDepth = 6)
+            for (t in checkTexts) {
+                val lower = t.lowercase().trim()
+                if (lower == "account" || lower == "privacy" || lower == "chats" || 
+                    lower == "notifications" || lower == "storage and data" || lower == "app language" || 
+                    lower == "help" || lower == "invite a friend" || lower == "avatar" || lower == "settings") {
+                    settingsKeywordCount++
+                    if (settingsKeywordCount >= 2) {
+                        return true
+                    }
+                }
+            }
+        }
+
+        return false
+    }
+
+    private fun hasViewId(rootNode: AccessibilityNodeInfo, id: String): Boolean {
+        val nodes = rootNode.findAccessibilityNodeInfosByViewId(id)
+        val has = !nodes.isNullOrEmpty()
+        nodes?.forEach { it.recycle() }
+        return has
+    }
+
     private fun isChatScreen(node: AccessibilityNodeInfo, packageName: String = ""): Boolean {
         if (packageName.contains("whatsapp")) {
-            val whatsappChatIndicators = listOf(
-                "com.whatsapp:id/entry",
-                "com.whatsapp.w4b:id/entry",
-                "$packageName:id/entry",
-                "com.whatsapp:id/conversation_contact_name",
-                "com.whatsapp.w4b:id/conversation_contact_name",
-                "$packageName:id/conversation_contact_name",
-                "com.whatsapp:id/voice_note_btn",
-                "com.whatsapp.w4b:id/voice_note_btn",
-                "$packageName:id/voice_note_btn"
-            )
-            for (id in whatsappChatIndicators) {
-                val found = node.findAccessibilityNodeInfosByViewId(id)
-                if (!found.isNullOrEmpty()) {
-                    found.forEach { it.recycle() }
-                    return true
-                }
-            }
-            // For WhatsApp, if none of these conversation elements exist, it is 100% Home Screen, Settings, Status, or Calls!
-            return false
+            val hasEntry = hasViewId(node, "$packageName:id/entry") || 
+                           hasViewId(node, "com.whatsapp:id/entry") || 
+                           hasViewId(node, "com.whatsapp.w4b:id/entry")
+
+            val hasContact = hasViewId(node, "$packageName:id/conversation_contact_name") || 
+                             hasViewId(node, "com.whatsapp:id/conversation_contact_name") || 
+                             hasViewId(node, "com.whatsapp.w4b:id/conversation_contact_name")
+
+            // In WhatsApp, BOTH the message entry box and conversation contact header MUST exist
+            return hasEntry && hasContact
         } else if (packageName.contains("telegram")) {
-            val telegramChatIndicators = listOf(
-                "org.telegram.messenger:id/chat_text_edit",
-                "org.telegram.messenger:id/chat_write_box",
-                "org.telegram.messenger:id/chat_send_button"
-            )
-            for (id in telegramChatIndicators) {
-                val found = node.findAccessibilityNodeInfosByViewId(id)
-                if (!found.isNullOrEmpty()) {
-                    found.forEach { it.recycle() }
-                    return true
-                }
-            }
-            return false
+            val hasEdit = hasViewId(node, "org.telegram.messenger:id/chat_text_edit") || 
+                          hasViewId(node, "org.telegram.messenger:id/chat_write_box")
+            return hasEdit
         } else {
-            // For SMS: check for compose message box in bottom half of screen (not top search bars)
-            return hasBottomComposeBox(node)
+            val screenHeight = resources.displayMetrics.heightPixels
+            val hasCompose = hasBottomComposeBox(node, screenHeight)
+            if (!hasCompose) return false
+
+            val candidateTitle = extractBestEffortChatTitle(node, packageName)
+            return candidateTitle.isNotEmpty() && !NON_CHAT_TITLES.contains(candidateTitle.lowercase().trim())
         }
     }
 
-    private fun hasBottomComposeBox(node: AccessibilityNodeInfo): Boolean {
-        val screenHeight = resources.displayMetrics.heightPixels
+    private fun hasBottomComposeBox(node: AccessibilityNodeInfo, screenHeight: Int = resources.displayMetrics.heightPixels): Boolean {
         val bounds = android.graphics.Rect()
         node.getBoundsInScreen(bounds)
         if (node.isEditable && bounds.top > screenHeight * 0.45f) {
@@ -839,7 +897,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
         for (i in 0 until node.childCount) {
             val child = node.getChild(i)
             if (child != null) {
-                if (hasBottomComposeBox(child)) {
+                if (hasBottomComposeBox(child, screenHeight)) {
                     child.recycle()
                     return true
                 }
@@ -882,23 +940,33 @@ class MessageReaderAccessibilityService : AccessibilityService() {
         val isInsideGroup: Boolean = false
     )
 
-    private fun inspectNodeContext(node: AccessibilityNodeInfo, screenWidth: Int, isWhatsApp: Boolean): NodeScanContext {
+    private fun inspectNodeContext(
+        node: AccessibilityNodeInfo,
+        screenWidth: Int,
+        effectiveRight: Int = 0,
+        effectiveLeft: Int = 0,
+        isWhatsApp: Boolean = false
+    ): NodeScanContext {
         val nodeBounds = android.graphics.Rect()
         node.getBoundsInScreen(nodeBounds)
-
-        // Ultra-fast geometry sent detection: In WhatsApp & SMS, user's sent messages are right-aligned.
-        // If detected as sent by geometry, exit instantly (0ms) without any Binder IPC parent traversals!
-        if (screenWidth > 0 && nodeBounds.width() > 0) {
-            val distanceToLeft = nodeBounds.left
-            val distanceToRight = screenWidth - nodeBounds.right
-            if (distanceToRight < distanceToLeft - (screenWidth * 0.05f) && distanceToRight <= (screenWidth * 0.30f)) {
-                return NodeScanContext(isInsideQuote = false, isSent = true, isInsideGroup = false)
-            }
-        }
 
         var isQuote = false
         var isSent = false
         var isGroup = false
+
+        val rightRef = if (effectiveRight > 0) effectiveRight else screenWidth
+        val leftRef = effectiveLeft
+        val widthRef = if (screenWidth > 0) screenWidth else (rightRef - leftRef)
+
+        // 1. Text node geometry check (right-aligned check)
+        if (widthRef > 0 && nodeBounds.width() > 0) {
+            val distLeft = nodeBounds.left - leftRef
+            val distRight = rightRef - nodeBounds.right
+            if (distRight < distLeft - (widthRef * 0.05f) && distRight <= (widthRef * 0.35f)) {
+                isSent = true
+            }
+        }
+
         var current: AccessibilityNodeInfo? = node
         var count = 0
 
@@ -913,22 +981,50 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             }
 
             val contentDesc = current.contentDescription?.toString()?.lowercase() ?: ""
-            if (contentDesc.startsWith("you:") || contentDesc.contains("you: ")) {
-                return NodeScanContext(isInsideQuote = isQuote, isSent = true, isInsideGroup = isGroup)
+            if (contentDesc.startsWith("you:") || contentDesc.contains("you: ") ||
+                contentDesc.contains(", read") || contentDesc.contains(", delivered") ||
+                contentDesc.contains(", sent") || contentDesc.contains(", pending")) {
+                isSent = true
             }
 
-            // Check if current node is a bubble container that has a sender name child (name_in_message_color)
-            if (isWhatsApp && !isGroup && count <= 3) {
-                for (c in 0 until current.childCount) {
-                    val child = current.getChild(c)
-                    if (child != null) {
-                        val cId = child.viewIdResourceName?.lowercase() ?: ""
-                        if (cId.endsWith("name_in_message_color")) {
-                            isGroup = true
-                        }
-                        child.recycle()
+            // 2. Check bubble container bounds (count 1..3 represents the message bubble/card)
+            if (!isSent && count in 1..3 && widthRef > 0) {
+                val pBounds = android.graphics.Rect()
+                current.getBoundsInScreen(pBounds)
+                if (pBounds.width() > 0 && pBounds.width() < widthRef) {
+                    val pDistLeft = pBounds.left - leftRef
+                    val pDistRight = rightRef - pBounds.right
+                    // Sent bubble is snug against right margin and indented from left margin
+                    if (pDistRight < pDistLeft && pDistRight <= (widthRef * 0.22f) && pDistLeft >= (widthRef * 0.12f)) {
+                        isSent = true
                     }
-                    if (isGroup) break
+                }
+            }
+
+            // 3. Inspect siblings inside the bubble/row container for status ticks or sender info
+            if (count in 1..3) {
+                val childCount = current.childCount
+                for (c in 0 until childCount) {
+                    val child = current.getChild(c) ?: continue
+                    val cId = child.viewIdResourceName?.lowercase() ?: ""
+                    val cDesc = child.contentDescription?.toString()?.lowercase() ?: ""
+
+                    if (isWhatsApp && !isGroup && cId.endsWith("name_in_message_color")) {
+                        isGroup = true
+                    }
+
+                    // Delivery status icon: tick marks (only outgoing/sent messages have status icons in WhatsApp, Telegram, SMS!)
+                    if (cId.endsWith("status") || cId.endsWith("msg_status") || cId.endsWith("status_icon") || 
+                        cId.endsWith("status_indicator") || cId.contains("message_status")) {
+                        isSent = true
+                    }
+                    if (cDesc == "sent" || cDesc == "delivered" || cDesc == "read" || cDesc == "pending" || cDesc == "played" ||
+                        cDesc.contains("delivered to") || cDesc.contains("read by") || cDesc.contains("sent to")) {
+                        isSent = true
+                    }
+
+                    child.recycle()
+                    if (isSent && (isGroup || !isWhatsApp)) break
                 }
             }
 
@@ -937,18 +1033,141 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 break
             }
 
-            current = current.parent
+            val parent = current.parent
+            if (current != node) {
+                current.recycle()
+            }
+            current = parent
             count++
+        }
+
+        if (current != null && current != node) {
+            current.recycle()
         }
 
         return NodeScanContext(isInsideQuote = isQuote, isSent = isSent, isInsideGroup = isGroup)
     }
 
-    private fun extractTextFromNode(node: AccessibilityNodeInfo, packageName: String, chatTitle: String) {
+    private fun findMessageListContainer(rootNode: AccessibilityNodeInfo, packageName: String): AccessibilityNodeInfo? {
+        if (packageName.contains("whatsapp")) {
+            val listIds = listOf(
+                "android:id/list",
+                "$packageName:id/conversation_layout",
+                "com.whatsapp:id/conversation_layout",
+                "com.whatsapp.w4b:id/conversation_layout"
+            )
+            for (id in listIds) {
+                val nodes = rootNode.findAccessibilityNodeInfosByViewId(id)
+                if (!nodes.isNullOrEmpty()) {
+                    val container = nodes[0]
+                    for (i in 1 until nodes.size) nodes[i].recycle()
+                    return container
+                }
+            }
+            return findScrollableList(rootNode)
+        } else if (packageName.contains("telegram")) {
+            val nodes = rootNode.findAccessibilityNodeInfosByViewId("org.telegram.messenger:id/chat_list")
+            if (!nodes.isNullOrEmpty()) {
+                val container = nodes[0]
+                for (i in 1 until nodes.size) nodes[i].recycle()
+                return container
+            }
+            return findScrollableList(rootNode)
+        } else {
+            val smsListIds = listOf(
+                "$packageName:id/conversation_list",
+                "$packageName:id/message_list",
+                "$packageName:id/message_recycler_view",
+                "android:id/list"
+            )
+            for (id in smsListIds) {
+                val nodes = rootNode.findAccessibilityNodeInfosByViewId(id)
+                if (!nodes.isNullOrEmpty()) {
+                    val container = nodes[0]
+                    for (i in 1 until nodes.size) nodes[i].recycle()
+                    return container
+                }
+            }
+            return findScrollableList(rootNode)
+        }
+    }
+
+    private fun findScrollableList(node: AccessibilityNodeInfo, depth: Int = 0): AccessibilityNodeInfo? {
+        if (depth > 8) return null
+        val className = node.className?.toString() ?: ""
+        if (className.contains("ListView") || className.contains("RecyclerView")) {
+            val viewId = node.viewIdResourceName?.lowercase() ?: ""
+            if (!viewId.contains("menu") && !viewId.contains("popup") && !viewId.contains("setting") && !viewId.contains("toolbar")) {
+                return node
+            }
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findScrollableList(child, depth + 1)
+            if (found != null) {
+                if (found != child) child.recycle()
+                return found
+            }
+            child.recycle()
+        }
+        return null
+    }
+
+    private fun scanContainerForMessages(container: AccessibilityNodeInfo, packageName: String, chatTitle: String) {
+        val containerBounds = android.graphics.Rect()
+        container.getBoundsInScreen(containerBounds)
+        val screenWidth = resources.displayMetrics.widthPixels
+        val effectiveRight = if (containerBounds.right > 0) containerBounds.right else screenWidth
+        val effectiveLeft = if (containerBounds.left >= 0) containerBounds.left else 0
+        val isWhatsApp = packageName.contains("whatsapp")
+        val currentScanHashes = HashSet<Int>()
+        extractTextFromMessageContainer(
+            container, 
+            packageName, 
+            chatTitle, 
+            screenWidth, 
+            effectiveRight, 
+            effectiveLeft, 
+            isWhatsApp, 
+            depth = 0, 
+            currentScanHashes = currentScanHashes
+        )
+
+        // Update previously visible hashes:
+        // Messages visible right now are retained;
+        // if a message leaves the visible screen and is brought back later, it will trigger isNewlyAppeared = true!
+        previouslyVisibleMessageHashes.clear()
+        previouslyVisibleMessageHashes.addAll(currentScanHashes)
+    }
+
+    private fun extractTextFromMessageContainer(
+        node: AccessibilityNodeInfo,
+        packageName: String,
+        chatTitle: String,
+        screenWidth: Int,
+        effectiveRight: Int,
+        effectiveLeft: Int,
+        isWhatsApp: Boolean,
+        depth: Int,
+        currentScanHashes: MutableSet<Int>
+    ) {
+        if (depth > 12) return
+        if (ContactUtils.isTrustedSender(this, chatTitle)) return
+
+        val viewId = node.viewIdResourceName?.lowercase() ?: ""
+        
+        // Strictly exclude non-chat elements (toolbars, menus, popup options, compose inputs, settings)
+        if (viewId.contains("toolbar") || viewId.contains("action_bar") || 
+            viewId.contains("menu") || viewId.contains("popup") || 
+            viewId.contains("entry") || viewId.contains("compose") || 
+            viewId.contains("setting") || viewId.contains("header")) {
+            return
+        }
+
         if (node.text != null && node.text.isNotBlank()) {
             val text = node.text.toString()
             val cleanText = text.trim().replace(BIDI_REGEX, "")
-            val lowerText = cleanText.lowercase()
+            val lowerText = cleanText.lowercase(Locale.ROOT)
 
             val isTimeOrDate = cleanText.matches(TIME_REGEX_1) ||
                                cleanText.matches(TIME_REGEX_2) ||
@@ -960,6 +1179,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
 
             if (!isEditable && !isTimeOrDate && cleanText.isNotEmpty() && 
                 !IGNORED_EXACT_WORDS.contains(lowerText.trim()) &&
+                !JUNK_UI_TEXTS.contains(lowerText.trim()) &&
                 !lowerText.contains("type a message") && 
                 !lowerText.contains("search") &&
                 !lowerText.contains("type an sms message") &&
@@ -979,43 +1199,9 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 !lowerText.contains("tap here for group info") &&
                 !lowerText.contains("only admins can send") &&
                 !lowerText.contains("in this group")) {
-                
-                val viewId = node.viewIdResourceName ?: ""
-                if (packageName.contains("whatsapp")) {
-                    val effectiveSender = chatTitle.ifEmpty { cachedChatTitle }
-                    val isAlphabetSender = effectiveSender.isNotEmpty() && 
-                        (ContactUtils.isAlphabetOrAlphanumeric(effectiveSender) || ContactUtils.isContactExists(this, effectiveSender))
-                    if (isAlphabetSender && !lowerText.contains(".apk")) {
-                        return
-                    }
-
-                    if (effectiveSender.isEmpty() && !lowerText.contains(".apk")) {
-                        return
-                    }
-
-                    // Strict verified account exclusion: NEVER read messages from verified accounts!
-                    val isVerifiedChat = cachedIsVerifiedAccount || (chatTitle.isNotEmpty() && knownVerifiedAccounts.contains(chatTitle))
-                    if (isVerifiedChat) {
-                        return
-                    }
-
-                    // 1. If text starts with ~, it is a member sender name in a group!
-                    if (cleanText.startsWith("~") || viewId.endsWith("name_in_message_color")) {
-                        cachedIsGroup = true
-                        if (chatTitle.isNotEmpty()) knownGroupTitles.add(chatTitle)
-                        return
-                    }
-
-                    // 2. Strict group exclusion: If screen is currently a group or chat title is in known groups, NEVER read messages!
-                    val isGroupChat = cachedIsGroup || (chatTitle.isNotEmpty() && knownGroupTitles.contains(chatTitle))
-                    if (isGroupChat && !lowerText.contains(".apk")) {
-                        return
-                    }
-                }
 
                 val isApk = lowerText.contains(".apk")
 
-                // Ignore document file attachment metadata (PDF names, page counts, slide counts, file sizes)
                 val isDocMetadata = lowerText.endsWith(".pdf") || 
                                     lowerText.endsWith(".docx") || 
                                     lowerText.endsWith(".doc") || 
@@ -1027,152 +1213,298 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                                     cleanText.matches(Regex("""^\d+(\.\d+)?\s*(kb|mb|gb|b|bytes)$""", RegexOption.IGNORE_CASE)) ||
                                     cleanText.matches(Regex("""^\d+\s*(pages?|slides?|sheets?)$""", RegexOption.IGNORE_CASE)) ||
                                     cleanText == "•" || cleanText == "·"
-                if (isDocMetadata && !isApk) {
-                    return
-                }
-                val isFakeCredit = (packageName.contains("whatsapp") || packageName.contains("telegram")) &&
-                    (lowerText.contains("credited") || lowerText.contains("received") || lowerText.contains("successful") || lowerText.contains("debited")) &&
-                    (lowerText.contains("rs") || lowerText.contains("inr") || lowerText.contains("₹") || lowerText.contains("amount")) &&
-                    (lowerText.contains("account") || lowerText.contains("wallet") || lowerText.contains("upi") || lowerText.contains("a/c") || lowerText.contains("paytm") || lowerText.contains("phonepe") || lowerText.contains("gpay"))
 
-                val isKnownBadId = !isApk && !isFakeCredit && (
-                    viewId.endsWith("name_in_message_color") || 
-                    viewId.endsWith("date") ||
-                    viewId.endsWith("conversations_row_message") ||
-                    viewId.endsWith("conversation_contact_name") ||
-                    viewId.endsWith("conversation_contact_status") ||
-                    viewId.endsWith("action_bar_title") ||
-                    viewId.endsWith("title") ||
-                    viewId.endsWith("subtitle") ||
-                    viewId.endsWith("search_src_text") ||
-                    viewId.endsWith("search_box_text") ||
-                    viewId.endsWith("tab")
-                )
-                                   
-                val bounds = android.graphics.Rect()
-                node.getBoundsInScreen(bounds)
-                val screenWidth = resources.displayMetrics.widthPixels
+                if (!isDocMetadata || isApk) {
+                    val isFakeCredit = (isWhatsApp || packageName.contains("telegram")) &&
+                        (lowerText.contains("credited") || lowerText.contains("received") || lowerText.contains("successful") || lowerText.contains("debited")) &&
+                        (lowerText.contains("rs") || lowerText.contains("inr") || lowerText.contains("₹") || lowerText.contains("amount")) &&
+                        (lowerText.contains("account") || lowerText.contains("wallet") || lowerText.contains("upi") || lowerText.contains("a/c") || lowerText.contains("paytm") || lowerText.contains("phonepe") || lowerText.contains("gpay"))
 
-                val nodeCenter = bounds.centerX()
-                val screenCenter = screenWidth / 2
-                val isCenterAligned = Math.abs(nodeCenter - screenCenter) < (screenWidth * 0.05f) && bounds.width() < (screenWidth * 0.5f)
+                    val isKnownBadId = !isApk && !isFakeCredit && (
+                        viewId.endsWith("name_in_message_color") || 
+                        viewId.endsWith("date") ||
+                        viewId.endsWith("conversations_row_message") ||
+                        viewId.endsWith("conversation_contact_name") ||
+                        viewId.endsWith("conversation_contact_status") ||
+                        viewId.endsWith("action_bar_title") ||
+                        viewId.endsWith("title") ||
+                        viewId.endsWith("subtitle") ||
+                        viewId.endsWith("search_src_text") ||
+                        viewId.endsWith("search_box_text") ||
+                        viewId.endsWith("tab")
+                    )
 
-                if ((!isKnownBadId && !isCenterAligned) || isApk) {
-                    val contextInfo = inspectNodeContext(node, screenWidth, packageName.contains("whatsapp"))
+                    val bounds = android.graphics.Rect()
+                    node.getBoundsInScreen(bounds)
+                    val nodeCenter = bounds.centerX()
+                    val screenCenter = screenWidth / 2
+                    val isCenterAligned = Math.abs(nodeCenter - screenCenter) < (screenWidth * 0.05f) && bounds.width() < (screenWidth * 0.5f)
 
-                    // STRICT WHATSAPP GROUP PROTECTION:
-                    // NEVER scan, analyze, or alert on group chat messages!
-                    // Only dangerous .apk file downloads are allowed to alert.
-                    if (contextInfo.isInsideGroup && !isApk) {
-                        return
-                    }
+                    val isUrlFraud = FraudDetectionEngine.findValidUrlInText(text)?.let {
+                        FraudDetectionEngine.analyze(it, text).score >= 50
+                    } == true
 
-                    if (!contextInfo.isInsideQuote && !contextInfo.isSent && (!contextInfo.isInsideGroup || isApk)) {
-                        if (chatTitle.isEmpty() || text.trim() != chatTitle.trim()) {
-                            val trimmedContent = text.trim()
-                            val contentHash = (packageName + ":" + trimmedContent).hashCode()
-                            if (contentHash == lastScannedContentHash || !recentScannedHashes.add(contentHash)) {
-                                return
+                    if ((!isKnownBadId && !isCenterAligned) || isApk || isUrlFraud) {
+                        val contextInfo = inspectNodeContext(node, screenWidth, effectiveRight, effectiveLeft, isWhatsApp)
+
+                        // STRICT PRIVACY RULE: Messages sent by the user are NEVER scanned as incoming scam threats.
+                        // Only incoming messages (!contextInfo.isSent) are evaluated.
+                        if (!contextInfo.isInsideQuote && !contextInfo.isSent && (!contextInfo.isInsideGroup || isApk || isUrlFraud)) {
+                            if (chatTitle.isEmpty() || text.trim() != chatTitle.trim()) {
+                                val trimmedContent = text.trim()
+                                val contentHash = (packageName + ":" + chatTitle + ":" + trimmedContent).hashCode()
+                                if (currentScanHashes.add(contentHash)) {
+                                    val isNewlyAppeared = !previouslyVisibleMessageHashes.contains(contentHash)
+                                    val finalSender = if (chatTitle.isNotEmpty()) chatTitle else "Screen Reader"
+                                    val message = MessageEntity(
+                                        sender = finalSender,
+                                        content = trimmedContent,
+                                        appName = packageName
+                                    )
+                                    ScamAnalyzer.getInstance(this).analyzeMessage(
+                                        message = message,
+                                        isApk = isApk,
+                                        isFakeCredit = if (contextInfo.isInsideGroup) false else isFakeCredit,
+                                        forceRealert = isNewlyAppeared
+                                    )
+                                }
                             }
-                            lastScannedContentHash = contentHash
-
-                            val finalSender = if (chatTitle.isNotEmpty()) chatTitle else "Screen Reader"
-                            val message = MessageEntity(
-                                sender = finalSender,
-                                content = trimmedContent,
-                                appName = packageName
-                            )
-                            ScamAnalyzer.getInstance(this).analyzeMessage(message, isApk = isApk, isFakeCredit = if (contextInfo.isInsideGroup) false else isFakeCredit)
                         }
                     }
                 }
             }
         }
 
-        // Traverse children in reverse order (bottom-most newest messages processed first!)
         for (i in node.childCount - 1 downTo 0) {
-            val childNode = node.getChild(i)
-            if (childNode != null) {
-                extractTextFromNode(childNode, packageName, chatTitle)
-                childNode.recycle()
+            val child = node.getChild(i) ?: continue
+            extractTextFromMessageContainer(child, packageName, chatTitle, screenWidth, effectiveRight, effectiveLeft, isWhatsApp, depth + 1, currentScanHashes)
+            child.recycle()
+        }
+    }
+
+    private fun scanContainerForApksOnly(container: AccessibilityNodeInfo, packageName: String, chatTitle: String, depth: Int = 0) {
+        if (depth > 12) return
+        val rawText = container.text?.toString() ?: container.contentDescription?.toString()
+        if (!rawText.isNullOrBlank()) {
+            val lowerText = rawText.lowercase(Locale.ROOT)
+            if (lowerText.contains(".apk") && !container.isEditable) {
+                val finalSender = if (chatTitle.isNotEmpty()) chatTitle else "Group APK"
+                val message = MessageEntity(
+                    sender = finalSender,
+                    content = rawText.trim(),
+                    appName = packageName
+                )
+                ScamAnalyzer.getInstance(this).analyzeMessage(message, isApk = true, isFakeCredit = false, forceRealert = true)
             }
         }
+        for (i in 0 until container.childCount) {
+            val child = container.getChild(i) ?: continue
+            scanContainerForApksOnly(child, packageName, chatTitle, depth + 1)
+            child.recycle()
+        }
+    }
+
+    private fun extractTextFromNode(node: AccessibilityNodeInfo, packageName: String, chatTitle: String) {
+        val container = findMessageListContainer(node, packageName) ?: node
+        scanContainerForMessages(container, packageName, chatTitle)
+        if (container != node) container.recycle()
+    }
+
+    private fun scanForApksOnly(node: AccessibilityNodeInfo, packageName: String, chatTitle: String) {
+        val container = findMessageListContainer(node, packageName) ?: node
+        scanContainerForApksOnly(container, packageName, chatTitle)
+        if (container != node) container.recycle()
+    }
+
+    private fun isFileManagerOrDownloadApp(packageName: String): Boolean {
+        val lower = packageName.lowercase(Locale.ROOT)
+        return lower == "com.sec.android.app.myfiles" ||
+               lower == "com.google.android.apps.nbu.files" ||
+               lower == "com.android.documentsui" ||
+               lower == "com.google.android.documentsui" ||
+               lower == "com.android.providers.downloads.ui" ||
+               lower.contains("myfiles") ||
+               lower.contains("filemanager") ||
+               lower.contains("fileexplorer") ||
+               lower.contains("documentsui") ||
+               lower.contains("filestore") ||
+               lower.contains("download") ||
+               lower.contains("solidexplorer") ||
+               lower.contains("totalcommander") ||
+               lower.contains("cxinventor") ||
+               lower.contains("hidisk") ||
+               lower.contains("estrongs")
+    }
+
+    private fun extractApkFileName(text: String): String? {
+        val clean = text.trim()
+        val lower = clean.lowercase(Locale.ROOT)
+
+        // Ignore category headers, filter chips, search prompts, and storage sections
+        if (lower == "apk" || lower == "apks" || lower == ".apk" ||
+            lower.contains("installation file") ||
+            lower.contains("install file") ||
+            lower.contains("categories") ||
+            lower.contains("category") ||
+            lower.contains("search") ||
+            lower.contains("filter") ||
+            lower.contains("sort by") ||
+            lower.contains("internal storage") ||
+            lower.contains("sd card") ||
+            lower.contains("network storage") ||
+            lower.contains("recycle bin") ||
+            lower.contains("trash")) {
+            return null
+        }
+
+        // Exclude document types that aren't APKs
+        if (isNonApkDocument(clean)) return null
+
+        // Whitelist EdgeGuard itself so developer/user updates don't trigger false self-alerts
+        if (lower.contains("edgeguard") || lower.contains("safetexts")) {
+            return null
+        }
+
+        val match = Regex("""(?i)\b([a-zA-Z0-9_\-\.\+]+\.apk)\b""").find(clean)
+        val candidate = match?.value ?: return null
+        val candLower = candidate.lowercase(Locale.ROOT)
+        if (candLower == ".apk" || candLower == "apk" || (candLower == "the.apk" && lower.contains("install the.apk"))) {
+            return null
+        }
+        return candidate
+    }
+
+    private fun collectApkFileElements(
+        node: AccessibilityNodeInfo,
+        apkFiles: MutableList<String>,
+        screenWidth: Int,
+        screenHeight: Int,
+        depth: Int = 0
+    ) {
+        if (depth > 25) return
+
+        if (!node.isEditable) {
+            val rawText = node.text?.toString() ?: node.contentDescription?.toString()
+            if (!rawText.isNullOrBlank()) {
+                val apkName = extractApkFileName(rawText)
+                if (apkName != null) {
+                    val bounds = android.graphics.Rect()
+                    node.getBoundsInScreen(bounds)
+                    // Ensure node is rendered inside the visible screen bounds
+                    if (bounds.width() > 0 && bounds.height() > 0 &&
+                        bounds.bottom > 0 && bounds.top < screenHeight &&
+                        bounds.right > 0 && bounds.left < screenWidth) {
+                        apkFiles.add(apkName)
+                    }
+                }
+            }
+        }
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectApkFileElements(child, apkFiles, screenWidth, screenHeight, depth + 1)
+            child.recycle()
+        }
+    }
+
+    private fun scanVisibleApkFilesInFileManager(rootNode: AccessibilityNodeInfo, packageName: String) {
+        val displayMetrics = resources.displayMetrics
+        val screenWidth = displayMetrics.widthPixels
+        val screenHeight = displayMetrics.heightPixels
+
+        val foundApks = mutableListOf<String>()
+        collectApkFileElements(rootNode, foundApks, screenWidth, screenHeight)
+
+        if (foundApks.isEmpty()) {
+            return
+        }
+
+        val appDisplayName = when {
+            packageName.contains("myfiles") -> "My Files"
+            packageName.contains("nbu.files") -> "Files by Google"
+            packageName.contains("documentsui") -> "Files"
+            packageName.contains("download") -> "Downloads"
+            else -> "Storage Shield"
+        }
+
+        val currentScanHashes = mutableSetOf<Int>()
+
+        for (apkName in foundApks.distinct()) {
+            val contentHash = (packageName + ":FileManager:" + apkName).hashCode()
+            currentScanHashes.add(contentHash)
+            val isNewlyAppeared = !previouslyVisibleMessageHashes.contains(contentHash)
+
+            val alert = MessageEntity(
+                sender = appDisplayName,
+                content = "Dangerous unverified APK detected in storage: $apkName",
+                appName = packageName,
+                analysisResult = "Alert",
+                scamProbability = 1.0f
+            )
+
+            ScamAnalyzer.getInstance(this).analyzeMessage(
+                message = alert,
+                isApk = true,
+                isFakeCredit = false,
+                forceRealert = isNewlyAppeared
+            )
+        }
+
+        previouslyVisibleMessageHashes.clear()
+        previouslyVisibleMessageHashes.addAll(currentScanHashes)
     }
 
     override fun onInterrupt() {
         Log.d("MessageReader", "Accessibility Service Interrupted")
     }
 
-    private fun isUninstallScreen(node: AccessibilityNodeInfo): Boolean {
-        val text = node.text?.toString()?.lowercase() ?: ""
-        val desc = node.contentDescription?.toString()?.lowercase() ?: ""
-        
-        if (text.contains("uninstall") || desc.contains("uninstall") || 
-            text.contains("delete") || desc.contains("delete") || 
-            text.contains("remove") || desc.contains("remove")) {
-            return true
-        }
-        
+    private fun collectAllScreenTexts(node: AccessibilityNodeInfo, texts: MutableList<String>, depth: Int = 0) {
+        if (depth > 20) return
+        val t = node.text?.toString()?.lowercase(Locale.ROOT)
+        if (!t.isNullOrBlank()) texts.add(t)
+        val d = node.contentDescription?.toString()?.lowercase(Locale.ROOT)
+        if (!d.isNullOrBlank()) texts.add(d)
+
         for (i in 0 until node.childCount) {
-            val childNode = node.getChild(i)
-            if (childNode != null) {
-                if (isUninstallScreen(childNode)) {
-                    childNode.recycle()
-                    return true
-                }
-                childNode.recycle()
-            }
+            val child = node.getChild(i) ?: continue
+            collectAllScreenTexts(child, texts, depth + 1)
+            child.recycle()
         }
-        return false
     }
 
     private fun isInstallScreen(node: AccessibilityNodeInfo): Boolean {
-        // If it's an uninstall screen, it is definitely not an install screen
-        if (isUninstallScreen(node)) return false
-        
-        // Otherwise, look for explicit install/update keywords
-        return hasInstallKeywords(node)
-    }
+        val texts = mutableListOf<String>()
+        collectAllScreenTexts(node, texts)
+        if (texts.isEmpty()) return false
 
-    private fun hasInstallKeywords(node: AccessibilityNodeInfo): Boolean {
-        val text = node.text?.toString()?.lowercase() ?: ""
-        val desc = node.contentDescription?.toString()?.lowercase() ?: ""
-        
-        // Specific package installer prompts
-        if (text.contains("do you want to install this app") ||
-            text.contains("do you want to install this application") ||
-            text.contains("do you want to install an update") ||
-            text.contains("install unknown apps") ||
-            desc.contains("do you want to install this app") ||
-            desc.contains("do you want to install this application")) {
-            return true
+        val combined = texts.joinToString(" ")
+
+        // If ANY text mentions uninstall / delete / remove, it is DEFINITELY an uninstallation screen!
+        val isUninstall = combined.contains("uninstall") ||
+                          combined.contains("delete") ||
+                          combined.contains("remove") ||
+                          combined.contains("uninstallation")
+        if (isUninstall) {
+            Log.d("MessageReader", "Detected uninstallation screen, ignoring PackageInstaller: $combined")
+            return false
         }
 
-        // Action button with exact "Install" or "Update" on a package installer screen
-        val isExactInstallButton = (node.isClickable || node.className?.contains("Button") == true) &&
-            (text == "install" || text == "update" || desc == "install" || desc == "update")
-        if (isExactInstallButton) {
-            return true
-        }
-        
-        for (i in 0 until node.childCount) {
-            val childNode = node.getChild(i)
-            if (childNode != null) {
-                if (hasInstallKeywords(childNode)) {
-                    childNode.recycle()
-                    return true
-                }
-                childNode.recycle()
-            }
-        }
-        return false
+        // Positively verify that this screen is an installation or app update prompt
+        val hasInstallSignature = combined.contains("install") ||
+                                  combined.contains("update") ||
+                                  combined.contains("staging") ||
+                                  combined.contains("unknown sources") ||
+                                  combined.contains("allow from this source") ||
+                                  combined.contains("unknown apps")
+
+        return hasInstallSignature
     }
 
     private fun triggerScamFunnelOverlay(isDM: Boolean = false) {
         val alert = MessageEntity(
             sender = "System Alert",
             content = if (isDM) "Scam Funnel Interceptor triggered: User was blocked from a fraudulent DM conversation." else "Scam Funnel Interceptor triggered: User was blocked from joining a fraudulent group or illegal betting site.",
-            appName = "SafeConvos",
+            appName = "EdgeGuard",
             analysisResult = "Alert",
             scamProbability = 1.0f
         )
@@ -1183,32 +1515,33 @@ class MessageReaderAccessibilityService : AccessibilityService() {
     }
 
     private fun checkForJoinGroupUI(node: AccessibilityNodeInfo): Boolean {
-        if (node.text != null || node.contentDescription != null) {
-            val text = node.text?.toString()?.lowercase()?.trim() ?: ""
-            val desc = node.contentDescription?.toString()?.lowercase()?.trim() ?: ""
-            
-            if (text.contains("join group") || text.contains("join channel") || 
-                text == "join" || text.contains("join chat") || 
-                text.contains("request to join") || text == "join now" || text.contains("apply to join") ||
-                text.contains("view group") || text.contains("view channel") || text.contains("view community") ||
-                desc.contains("join group") || desc.contains("join channel") || 
-                desc == "join" || desc.contains("join chat") || 
-                desc.contains("request to join") || desc == "join now" || desc.contains("apply to join") ||
-                desc.contains("view group") || desc.contains("view channel") || desc.contains("view community")) {
-                return true
+        val texts = mutableListOf<String>()
+        collectAllScreenTexts(node, texts)
+        if (texts.isEmpty()) return false
+
+        // Look strictly for positive group joining action buttons
+        var hasJoinAction = false
+        for (t in texts) {
+            val clean = t.trim()
+            if (clean == "join group" || clean == "join channel" || clean == "join chat" ||
+                clean == "join now" || clean == "request to join group" || clean == "apply to join group") {
+                hasJoinAction = true
+                break
             }
         }
-        for (i in 0 until node.childCount) {
-            val childNode = node.getChild(i)
-            if (childNode != null) {
-                if (checkForJoinGroupUI(childNode)) {
-                    childNode.recycle()
-                    return true
-                }
-                childNode.recycle()
-            }
-        }
-        return false
+
+        if (!hasJoinAction) return false
+
+        val combined = texts.joinToString(" ")
+        // Group preview/invitation card signature (participants, invite link, etc.)
+        val isInviteCard = combined.contains("invite link") ||
+                           combined.contains("invited you to join") ||
+                           combined.contains("invitation to join") ||
+                           combined.contains("group invite") ||
+                           combined.contains("participants") ||
+                           combined.contains("members")
+
+        return isInviteCard
     }
 
     private fun normalizeText(input: String): String {
@@ -1421,7 +1754,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
         val alert = MessageEntity(
             sender = "System Alert",
             content = "Fake Booking Scam Interceptor triggered: User received a payment request in a chat linked to a recent hotel search.",
-            appName = "SafeConvos",
+            appName = "EdgeGuard",
             analysisResult = "Alert",
             scamProbability = 1.0f
         )
@@ -1580,57 +1913,354 @@ class MessageReaderAccessibilityService : AccessibilityService() {
         return isNonApk && !lower.contains(".apk")
     }
 
-    private fun checkForBrowserApkDownload(node: AccessibilityNodeInfo, packageName: String): Boolean {
-        if (node.text != null) {
-            val text = node.text.toString().lowercase()
-            // Catch Chrome download prompt: "File might be harmful. Do you want to download xyz.apk anyway?"
-            // Or web page download button: "Download APK", "Install APK"
-            if (text.contains(".apk") && (text.contains("harmful") || text.contains("download") || text.contains("anyway") || text.contains("install") || text.contains("file"))) {
-                val alert = MessageEntity(
-                    sender = if (packageName.contains("sbrowser")) "Samsung Internet" else "Chrome",
-                    content = "Malicious APK Download: ${node.text}",
-                    appName = packageName,
-                    analysisResult = "Alert",
-                    scamProbability = 1.0f
-                )
-                ScamAnalyzer.getInstance(this).analyzeMessage(alert, isApk = true)
-                return true
-            }
+    private fun handleViewClickedForApkDownload(event: AccessibilityEvent, packageName: String) {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastApkDownloadWarningTime < 1000L) {
+            return
         }
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i)
-            if (child != null) {
-                if (checkForBrowserApkDownload(child, packageName)) {
-                    child.recycle()
-                    return true
+
+        val sourceNode = event.source ?: return
+        try {
+            val clickedTexts = mutableListOf<String>()
+            collectTexts(sourceNode, clickedTexts, maxDepth = 4)
+
+            for (t in event.text) {
+                if (!t.isNullOrBlank()) clickedTexts.add(t.toString())
+            }
+            if (event.contentDescription != null) {
+                clickedTexts.add(event.contentDescription.toString())
+            }
+
+            var isApkClick = false
+            var apkFileName: String? = null
+            val apkRegex = Regex("""(?i)\b[\w\-\.\+]+\.apk\b""")
+
+            // 1. Direct match on .apk in clicked view
+            for (t in clickedTexts) {
+                val match = apkRegex.find(t)
+                if (match != null) {
+                    apkFileName = match.value
+                    isApkClick = true
+                    break
                 }
-                child.recycle()
             }
+
+            // 2. Action buttons like "Download APK", "Install APK", "Get APK", "Open APK"
+            if (!isApkClick) {
+                for (t in clickedTexts) {
+                    val lower = t.lowercase(Locale.ROOT)
+                    if (lower.contains("apk") && (lower.contains("download") || lower.contains("install") || lower.contains("get") || lower.contains("save") || lower.contains("open"))) {
+                        isApkClick = true
+                        apkFileName = "Unverified APK"
+                        break
+                    }
+                }
+            }
+
+            // 3. User clicked any action button ("download", "install", "get", "open", "save", "download anyway") on an APK page/dialog
+            if (!isApkClick) {
+                val combined = clickedTexts.joinToString(" ").lowercase(Locale.ROOT)
+                val hasActionWord = combined.contains("download") || combined.contains("install") ||
+                                    combined.contains("get") || combined.contains("save") ||
+                                    combined.contains("open") || combined.contains("keep")
+                if (hasActionWord) {
+                    val root = rootInActiveWindow
+                    if (root != null) {
+                        val windowTexts = mutableListOf<String>()
+                        collectTexts(root, windowTexts, maxDepth = 12)
+                        val windowCombined = windowTexts.joinToString(" ")
+                        val match = apkRegex.find(windowCombined)
+                        if (match != null) {
+                            apkFileName = match.value
+                            isApkClick = true
+                        } else if (windowCombined.contains(".apk", ignoreCase = true)) {
+                            apkFileName = "Unverified APK"
+                            isApkClick = true
+                        }
+                    }
+                }
+            }
+
+            // 4. Check if the parent or ancestor container references .apk (e.g. card with file info + download button)
+            if (!isApkClick) {
+                var currentParent = sourceNode.parent
+                var depth = 0
+                while (currentParent != null && depth < 3) {
+                    val parentTexts = mutableListOf<String>()
+                    collectTexts(currentParent, parentTexts, maxDepth = 4)
+                    for (pt in parentTexts) {
+                        val match = apkRegex.find(pt)
+                        if (match != null) {
+                            apkFileName = match.value
+                            isApkClick = true
+                            break
+                        }
+                    }
+                    if (isApkClick) break
+                    currentParent = currentParent.parent
+                    depth++
+                }
+            }
+
+            if (isApkClick && apkFileName != null) {
+                lastApkDownloadWarningTime = currentTime
+                Log.d("MessageReader", "INTERCEPTED APK CLICK: $apkFileName in $packageName! Triggering alert.")
+                triggerApkDownloadAlert(packageName, apkFileName)
+            }
+        } catch (e: Exception) {
+            Log.e("MessageReader", "Error inspecting clicked APK download node", e)
+        } finally {
+            sourceNode.recycle()
         }
-        return false
     }
 
-    private fun scanForApksOnly(node: AccessibilityNodeInfo, packageName: String, chatTitle: String) {
-        if (node.text != null && node.text.isNotBlank()) {
-            val text = node.text.toString()
-            val lowerText = text.lowercase()
-            if (lowerText.contains(".apk") && !node.isEditable) {
-                val finalSender = if (chatTitle.isNotEmpty()) chatTitle else "Group APK"
-                val message = MessageEntity(
-                    sender = finalSender,
-                    content = text.trim(),
-                    appName = packageName
-                )
-                ScamAnalyzer.getInstance(this).analyzeMessage(message, isApk = true, isFakeCredit = false)
+    private fun checkForBrowserApkDownloadDialog(rootNode: AccessibilityNodeInfo, packageName: String): Boolean {
+        if (OverlayUtils.isOverlayShowing || ScamAlertActivity.isAlertActive) {
+            return false
+        }
+
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastApkDownloadWarningTime < 1000L) {
+            return false
+        }
+
+        val texts = mutableListOf<String>()
+        collectTexts(rootNode, texts, maxDepth = 10)
+        if (texts.isEmpty()) return false
+
+        val combinedText = texts.joinToString(" ").lowercase(Locale.ROOT)
+
+        // Strictly check for genuine browser download confirmation prompts resulting from click
+        val hasBrowserPromptSignature = 
+            combinedText.contains(".apk") && (
+                combinedText.contains("harmful") ||
+                combinedText.contains("do you want to download") ||
+                combinedText.contains("download again") ||
+                combinedText.contains("download anyway") ||
+                combinedText.contains("file may harm") ||
+                combinedText.contains("keep anyway") ||
+                (combinedText.contains("download") && (combinedText.contains("cancel") || combinedText.contains("details")))
+            )
+
+        if (!hasBrowserPromptSignature) {
+            return false
+        }
+
+        val apkRegex = Regex("""(?i)\b[\w\-\.\+]+\.apk\b""")
+        val apkMatch = apkRegex.find(combinedText)
+        val apkFileName = apkMatch?.value ?: if (combinedText.contains(".apk")) "Unverified APK" else return false
+
+        lastApkDownloadWarningTime = currentTime
+        triggerApkDownloadAlert(packageName, apkFileName)
+        return true
+    }
+
+    private fun triggerApkDownloadAlert(packageName: String, apkFileName: String) {
+        val appDisplayName = when {
+            packageName.contains("chrome") -> "Chrome"
+            packageName.contains("sbrowser") -> "Samsung Internet"
+            packageName.contains("firefox") -> "Firefox"
+            packageName.contains("brave") -> "Brave"
+            packageName.contains("opera") -> "Opera"
+            packageName.contains("emmx") -> "Edge"
+            packageName.contains("packageinstaller") -> "Package Installer"
+            packageName.contains("download") -> "Download Manager"
+            else -> "Browser"
+        }
+
+        val alert = MessageEntity(
+            sender = appDisplayName,
+            content = "Dangerous APK Download: $apkFileName",
+            appName = packageName,
+            analysisResult = "Alert",
+            scamProbability = 1.0f
+        )
+
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            AppDatabase.getDatabase(this@MessageReaderAccessibilityService).messageDao().insertMessage(alert)
+        }
+
+        Handler(Looper.getMainLooper()).post {
+            ScamAnalyzer.getInstance(this@MessageReaderAccessibilityService).showScamWarningOverlay(alert, isApk = true)
+        }
+    }
+
+    private fun collectTexts(node: AccessibilityNodeInfo?, list: MutableList<String>, maxDepth: Int) {
+        if (node == null || maxDepth <= 0 || list.size > 60) return
+        val text = node.text?.toString()?.trim()
+        if (!text.isNullOrEmpty()) list.add(text)
+        val desc = node.contentDescription?.toString()?.trim()
+        if (!desc.isNullOrEmpty() && desc != text) list.add(desc)
+
+        val childCount = node.childCount
+        for (i in 0 until childCount) {
+            val child = node.getChild(i) ?: continue
+            collectTexts(child, list, maxDepth - 1)
+            child.recycle()
+        }
+    }
+
+    private var lastBrowserScanDomain: String = ""
+    private var lastBrowserScanTime: Long = 0L
+    private var lastAlertSavedDomain: String = ""
+    private var lastAlertSavedTime: Long = 0L
+
+    private fun checkBrowserFraudWebsite(rootNode: AccessibilityNodeInfo) {
+        val urlText = extractBrowserUrl(rootNode)
+        if (urlText.isNullOrBlank()) {
+            return
+        }
+
+        val domain = FraudDetectionEngine.extractDomain(urlText)
+        if (domain.isBlank()) {
+            return
+        }
+
+        if (ContactUtils.isTrustedSender(this, domain)) {
+            Log.d("BrowserFraud", "Skipping trusted website: $domain")
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        if (domain == lastBrowserScanDomain && (now - lastBrowserScanTime) < 3000L) {
+            return
+        }
+
+        val textList = mutableListOf<String>()
+        collectTexts(rootNode, textList, maxDepth = 25)
+        val renderedText = textList.joinToString(" ")
+
+        lastBrowserScanDomain = domain
+        lastBrowserScanTime = now
+
+        Log.d("BrowserFraud", "Scanning URL: $urlText (domain: $domain)")
+        val result = FraudDetectionEngine.analyze(urlText, renderedText)
+        Log.d("BrowserFraud", "Scan result for $domain: score=${result.score}, reasons=${result.reasons}")
+
+        if (result.score >= 50) {
+            val alertSender = when (result.fraudCategory) {
+                "GOVERNMENT" -> "Fake Govt WebShield"
+                "BANK" -> "Bank Phishing WebShield"
+                else -> "EdgeGuard WebShield"
+            }
+            val alertHeader = when (result.fraudCategory) {
+                "GOVERNMENT" -> "🚨 Fake Government Portal: $domain (Risk Score: ${result.score}/100)\n"
+                "BANK" -> "🚨 Fake Bank / Phishing: $domain (Risk Score: ${result.score}/100)\n"
+                else -> "🚨 Fake Website: $domain (Risk Score: ${result.score}/100)\n"
+            }
+            val alert = MessageEntity(
+                sender = alertSender,
+                content = alertHeader + result.reasons.joinToString("\n") { "• $it" },
+                appName = "EdgeGuard",
+                analysisResult = "Alert",
+                scamProbability = (result.score / 100f).coerceIn(0.5f, 1.0f)
+            )
+
+            val nowAlert = System.currentTimeMillis()
+            if (domain != lastAlertSavedDomain || (nowAlert - lastAlertSavedTime) > 30_000L) {
+                lastAlertSavedDomain = domain
+                lastAlertSavedTime = nowAlert
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                    try {
+                        AppDatabase.getDatabase(this@MessageReaderAccessibilityService).messageDao().insertMessage(alert)
+                        Log.d("BrowserFraud", "Saved fraud alert for $domain to database ($alertSender)")
+                    } catch (e: Exception) {
+                        Log.e("BrowserFraud", "Failed to save alert to database: ${e.message}", e)
+                    }
+                }
+            }
+
+            Handler(Looper.getMainLooper()).post {
+                if (!android.provider.Settings.canDrawOverlays(this)) {
+                    android.widget.Toast.makeText(
+                        this,
+                        "🚨 DANGEROUS SCAM WEBSITE (${result.score}/100)!\n$domain\n${result.reasons.firstOrNull() ?: ""}",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    OverlayUtils.showScamCardOverlay(
+                        context = this,
+                        message = alert,
+                        isFakeWebsite = true,
+                        websiteDomain = domain,
+                        fraudCategory = result.fraudCategory
+                    )
+                }
             }
         }
+    }
+
+    /**
+     * Extracts active browser URL using known resource IDs and fallback hierarchical traversal.
+     */
+    private fun extractBrowserUrl(rootNode: AccessibilityNodeInfo): String? {
+        val knownIds = listOf(
+            "com.android.chrome:id/url_bar",
+            "com.android.chrome:id/location_bar",
+            "com.android.chrome:id/search_box_text",
+            "com.brave.browser:id/url_bar",
+            "com.brave.browser:id/location_bar",
+            "org.mozilla.firefox:id/mozac_browser_toolbar_url_view",
+            "org.mozilla.firefox:id/toolbar",
+            "com.sec.android.app.sbrowser:id/location_bar_edit_text",
+            "com.sec.android.app.sbrowser:id/location_bar"
+        )
+        for (vid in knownIds) {
+            val list = rootNode.findAccessibilityNodeInfosByViewId(vid)
+            if (!list.isNullOrEmpty()) {
+                for (node in list) {
+                    val urlFromText = FraudDetectionEngine.findValidUrlInText(node.text?.toString())
+                    if (urlFromText != null) {
+                        list.forEach { @Suppress("DEPRECATION") it.recycle() }
+                        return urlFromText
+                    }
+                    val urlFromDesc = FraudDetectionEngine.findValidUrlInText(node.contentDescription?.toString())
+                    if (urlFromDesc != null) {
+                        list.forEach { @Suppress("DEPRECATION") it.recycle() }
+                        return urlFromDesc
+                    }
+                }
+                list.forEach { @Suppress("DEPRECATION") it.recycle() }
+            }
+        }
+
+        // Fallback 1: search nodes with url / location / toolbar in their ID
+        val urlFromBar = findUrlByScanningTopBar(rootNode, depth = 0)
+        if (urlFromBar != null) return urlFromBar
+
+        // Fallback 2: if DNS failed or browser error page displays the domain (e.g. "Check if there is a typo in ..."), extract from screen
+        val errorTexts = mutableListOf<String>()
+        collectTexts(rootNode, errorTexts, maxDepth = 15)
+        for (t in errorTexts) {
+            val found = FraudDetectionEngine.findValidUrlInText(t)
+            if (found != null) {
+                val d = FraudDetectionEngine.extractDomain(found)
+                if (d.isNotEmpty() && !d.contains("google.") && !d.contains("chrome.") && !d.contains("android.")) {
+                    return found
+                }
+            }
+        }
+        return null
+    }
+
+    private fun findUrlByScanningTopBar(node: AccessibilityNodeInfo?, depth: Int): String? {
+        if (node == null || depth > 15) return null
+        val id = node.viewIdResourceName
+        if (id != null && (id.contains("url") || id.contains("location") || id.contains("toolbar") || id.contains("address"))) {
+            val urlFromText = FraudDetectionEngine.findValidUrlInText(node.text?.toString())
+            if (urlFromText != null) return urlFromText
+            val urlFromDesc = FraudDetectionEngine.findValidUrlInText(node.contentDescription?.toString())
+            if (urlFromDesc != null) return urlFromDesc
+        }
+
         for (i in 0 until node.childCount) {
-            val child = node.getChild(i)
-            if (child != null) {
-                scanForApksOnly(child, packageName, chatTitle)
-                child.recycle()
-            }
+            val child = node.getChild(i) ?: continue
+            val found = findUrlByScanningTopBar(child, depth + 1)
+            @Suppress("DEPRECATION")
+            child.recycle()
+            if (found != null) return found
         }
+        return null
     }
 }
 
