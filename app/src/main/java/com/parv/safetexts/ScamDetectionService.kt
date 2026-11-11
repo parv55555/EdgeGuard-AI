@@ -4,7 +4,12 @@ package com.parv.safetexts
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.DownloadManager
 import android.content.Context
+import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.net.Uri
 import android.provider.ContactsContract
 import android.provider.Telephony
@@ -39,8 +44,10 @@ class ScamDetectionService : NotificationListenerService() {
     private val messageMutex = Mutex()
 
     private var appInstallReceiver: AppInstallReceiver? = null
+    private var downloadCompleteReceiver: android.content.BroadcastReceiver? = null
     private var isTelephonyRegistered = false
     private var digitalArrestJob: kotlinx.coroutines.Job? = null
+    private var lastApkNotificationTime = 0L
 
     private val voipAppNames = mapOf(
         "com.whatsapp" to "WhatsApp",
@@ -171,6 +178,10 @@ class ScamDetectionService : NotificationListenerService() {
         ScamAnalyzer.getInstance(this)
         cleanupOldMessages()
 
+        // Start as a foreground service so the OS (and OEM process killers) cannot silently
+        // kill us while the screen is off or the device is under memory pressure.
+        startForegroundWithNotification()
+
         val filter = android.content.IntentFilter(android.content.Intent.ACTION_PACKAGE_ADDED).apply {
             addDataScheme("package")
         }
@@ -178,12 +189,156 @@ class ScamDetectionService : NotificationListenerService() {
         androidx.core.content.ContextCompat.registerReceiver(this, appInstallReceiver, filter, androidx.core.content.ContextCompat.RECEIVER_EXPORTED)
 
         registerTelephonyListener()
+        registerDownloadReceiver()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         appInstallReceiver?.let {
             unregisterReceiver(it)
+        }
+        downloadCompleteReceiver?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (e: Exception) {
+                Log.e("ScamDetection", "Error unregistering download receiver: ${e.message}")
+            }
+        }
+    }
+
+    /** Creates a low-priority persistent notification and calls [startForeground] so the OS
+     *  treats this service as foreground-tier — it cannot be silently killed under memory
+     *  pressure, Doze, or OEM battery optimisers (MIUI, ColorOS, FuntouchOS). */
+    private fun startForegroundWithNotification() {
+        val channelId = "edgeguard_protection"
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (nm.getNotificationChannel(channelId) == null) {
+            val channel = NotificationChannel(
+                channelId,
+                "EdgeGuard Protection",
+                NotificationManager.IMPORTANCE_LOW  // silent — no sound, no heads-up
+            ).apply {
+                description = "Persistent indicator while EdgeGuard is actively protecting your device."
+                setShowBadge(false)
+            }
+            nm.createNotificationChannel(channel)
+        }
+
+        // Tap the notification → open the app
+        val openAppIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val notification: Notification = Notification.Builder(this, channelId)
+            .setContentTitle("EdgeGuard is active")
+            .setContentText("Monitoring messages and calls for scams.")
+            .setSmallIcon(android.R.drawable.ic_lock_lock)  // replaced by app icon post-build
+            .setOngoing(true)          // prevents swipe-to-dismiss
+            .setContentIntent(openAppIntent)
+            .build()
+
+        startForeground(1001, notification)
+    }
+
+    private fun registerDownloadReceiver() {
+        try {
+            val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
+            downloadCompleteReceiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: Intent) {
+                    if (intent.action == DownloadManager.ACTION_DOWNLOAD_COMPLETE) {
+                        val downloadId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
+                        if (downloadId != -1L) {
+                            checkCompletedDownload(downloadId)
+                        }
+                    }
+                }
+            }
+            androidx.core.content.ContextCompat.registerReceiver(
+                this,
+                downloadCompleteReceiver,
+                filter,
+                androidx.core.content.ContextCompat.RECEIVER_EXPORTED
+            )
+        } catch (e: Exception) {
+            Log.e("ScamDetection", "Failed to register download receiver", e)
+        }
+    }
+
+    private fun checkCompletedDownload(downloadId: Long) {
+        try {
+            val dm = getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager ?: return
+            val query = DownloadManager.Query().setFilterById(downloadId)
+            val cursor = dm.query(query)
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val titleCol = it.getColumnIndex(DownloadManager.COLUMN_TITLE)
+                    val uriCol = it.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                    val mediaTypeCol = it.getColumnIndex(DownloadManager.COLUMN_MEDIA_TYPE)
+                    
+                    val title = if (titleCol != -1) it.getString(titleCol) ?: "" else ""
+                    val uri = if (uriCol != -1) it.getString(uriCol) ?: "" else ""
+                    val mediaType = if (mediaTypeCol != -1) it.getString(mediaTypeCol) ?: "" else ""
+                    
+                    val isApk = title.endsWith(".apk", ignoreCase = true) ||
+                                uri.endsWith(".apk", ignoreCase = true) ||
+                                title.contains(".apk", ignoreCase = true) ||
+                                uri.contains(".apk", ignoreCase = true) ||
+                                mediaType.equals("application/vnd.android.package-archive", ignoreCase = true)
+                                
+                    if (isApk) {
+                        val currentTime = System.currentTimeMillis()
+                        if (currentTime - lastApkNotificationTime > 3500L) {
+                            lastApkNotificationTime = currentTime
+                            val fileName = if (title.isNotEmpty()) title else uri.substringAfterLast("/")
+                            Log.d("ScamDetection", "DETECTED COMPLETED APK DOWNLOAD: $fileName")
+                            
+                            val alert = MessageEntity(
+                                sender = "Download Manager",
+                                content = "Dangerous APK Download: $fileName",
+                                appName = "Download Manager",
+                                analysisResult = "Alert",
+                                scamProbability = 1.0f
+                            )
+                            serviceScope.launch(Dispatchers.IO) {
+                                database.messageDao().insertMessage(alert)
+                            }
+                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                ScamAnalyzer.getInstance(applicationContext).showScamWarningOverlay(alert, isApk = true)
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("ScamDetection", "Error querying download manager", e)
+        }
+    }
+
+    private fun getAppDisplayName(packageName: String): String {
+        return when {
+            packageName.contains("chrome") -> "Chrome"
+            packageName.contains("sbrowser") -> "Samsung Internet"
+            packageName.contains("firefox") -> "Firefox"
+            packageName.contains("brave") -> "Brave"
+            packageName.contains("opera") -> "Opera"
+            packageName.contains("emmx") -> "Edge"
+            packageName.contains("downloads") -> "Download Manager"
+            packageName.contains("myfiles") -> "My Files"
+            voipAppNames.containsKey(packageName) -> voipAppNames[packageName] ?: packageName
+            else -> {
+                try {
+                    val pm = packageManager
+                    val appInfo = pm.getApplicationInfo(packageName, 0)
+                    pm.getApplicationLabel(appInfo).toString()
+                } catch (e: Exception) {
+                    packageName
+                }
+            }
         }
     }
 
@@ -205,6 +360,51 @@ class ScamDetectionService : NotificationListenerService() {
         cleanupOldMessages()
         
         val packageName = sbn.packageName
+        if (packageName == applicationContext.packageName) return
+
+        val extras = sbn.notification.extras
+        val rawTitle = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: ""
+        val rawText = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
+        val rawSubText = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString() ?: ""
+        val rawBigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString() ?: ""
+        val rawInfoText = extras.getCharSequence(Notification.EXTRA_INFO_TEXT)?.toString() ?: ""
+        val rawSummaryText = extras.getCharSequence(Notification.EXTRA_SUMMARY_TEXT)?.toString() ?: ""
+        val rawBigTitle = extras.getCharSequence(Notification.EXTRA_TITLE_BIG)?.toString() ?: ""
+        val ticker = sbn.notification.tickerText?.toString() ?: ""
+
+        val allNotifContent = listOf(rawTitle, rawText, rawSubText, rawBigText, rawInfoText, rawSummaryText, rawBigTitle, ticker)
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+
+        val lowerNotif = allNotifContent.lowercase(Locale.ROOT)
+
+        // --- GATEWAY 1: Instant Detection of APK Downloads & File Transfers ---
+        if (lowerNotif.contains(".apk")) {
+            val currentTime = System.currentTimeMillis()
+            if (currentTime - lastApkNotificationTime > 3500L) {
+                lastApkNotificationTime = currentTime
+                
+                val appLabel = getAppDisplayName(packageName)
+                val apkMatch = Regex("""(?i)\b[\w\-\.\+]+\.apk\b""").find(allNotifContent)?.value ?: "unverified.apk"
+                Log.d("ScamDetection", "DETECTED APK NOTIFICATION from $appLabel ($packageName): $apkMatch")
+                
+                val alert = MessageEntity(
+                    sender = appLabel,
+                    content = "Dangerous APK Download: $apkMatch",
+                    appName = packageName,
+                    analysisResult = "Alert",
+                    scamProbability = 1.0f
+                )
+                serviceScope.launch(Dispatchers.IO) {
+                    database.messageDao().insertMessage(alert)
+                }
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    ScamAnalyzer.getInstance(applicationContext).showScamWarningOverlay(alert, isApk = true)
+                }
+            }
+            return // Skip further standard processing for this APK download notification
+        }
+
         val defaultSmsPackage = Telephony.Sms.getDefaultSmsPackage(applicationContext)
         val voipAppName = voipAppNames[packageName]
         val isVoipApp = voipAppName != null
@@ -215,15 +415,17 @@ class ScamDetectionService : NotificationListenerService() {
                            packageName == "com.sec.android.app.sbrowser" || 
                            packageName == "com.brave.browser" || 
                            packageName == "com.opera.browser" || 
-                           packageName == "org.mozilla.firefox"
-        
+                           packageName == "org.mozilla.firefox" ||
+                           packageName == "com.microsoft.emmx" ||
+                           packageName == "com.duckduckgo.mobile.android" ||
+                           packageName == "com.vivaldi.browser"
+
         if (!isVoipApp && !isSms && !isBrowserApp) return
 
         // Ignore summary notifications to prevent merged/weird titles and duplicated messages
         val isGroupSummary = (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0
         if (isGroupSummary) return
 
-        val extras = sbn.notification.extras
         var title = extras.getString(Notification.EXTRA_TITLE) ?: "Unknown Sender"
         var text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
 
@@ -486,6 +688,11 @@ class ScamDetectionService : NotificationListenerService() {
                 )
 
                 val isKnownContact = ContactUtils.isContactExists(applicationContext, title)
+                val isTrusted = ContactUtils.isTrustedSender(applicationContext, title)
+                if (isTrusted && !isApk) {
+                    Log.d("ScamDetection", "Skipping message from trusted sender: $title")
+                    return@withLock
+                }
                 
                 // Allow analysis if it hits a deterministic rule (like fake credit/APK).
                 // For regular text messages, we only run the PyTorch text analyzer on standard SMS (non-VoIP).
@@ -495,7 +702,7 @@ class ScamDetectionService : NotificationListenerService() {
                         content = text,
                         appName = voipAppName ?: "SMS"
                     )
-                    ScamAnalyzer.getInstance(this@ScamDetectionService).analyzeMessage(message, isApk = isApk, isFakeCredit = isFakeCredit)
+                    ScamAnalyzer.getInstance(this@ScamDetectionService).analyzeMessage(message, isApk = isApk, isFakeCredit = isFakeCredit, forceRealert = true)
                 }
             }
         }

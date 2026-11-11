@@ -47,6 +47,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -181,7 +182,7 @@ fun PermissionsScreen(navController: NavController) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Permissions") },
+                title = { Text("Settings") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -366,21 +367,202 @@ fun PermissionsScreen(navController: NavController) {
                         }
                     )
 
+                    // OEM Autostart — deep-links to the OEM-specific "Autostart" / background
+                    // permission screen on MIUI, ColorOS, FuntouchOS and Samsung, so the user
+                    // can allow EdgeGuard to restart after boot and survive memory pressure on
+                    // Chinese phones where the standard Doze whitelist is not enough.
+                    val oemAutostartIntent: Intent? = remember {
+                        val manufacturer = Build.MANUFACTURER.lowercase(java.util.Locale.ROOT)
+                        val candidates: List<Intent> = when {
+                            manufacturer.contains("xiaomi") || manufacturer.contains("redmi") -> listOf(
+                                Intent().setComponent(ComponentName("com.miui.securitycenter",
+                                    "com.miui.permcenter.autostart.AutoStartManagementActivity")),
+                                Intent().setComponent(ComponentName("com.miui.powerkeeper",
+                                    "com.miui.powerkeeper.ui.HideAppsContainerManagementActivity"))
+                            )
+                            manufacturer.contains("oppo") || manufacturer.contains("realme") || manufacturer.contains("oneplus") -> listOf(
+                                Intent().setComponent(ComponentName("com.coloros.oppoguardelf",
+                                    "com.coloros.powermanager.fuelgaue.PowerUsageModelActivity")),
+                                Intent().setComponent(ComponentName("com.coloros.safecenter",
+                                    "com.coloros.safecenter.permission.startup.FakeActivity")),
+                                Intent().setComponent(ComponentName("com.oppo.safe",
+                                    "com.oppo.safe.permission.startup.StartupAppListActivity"))
+                            )
+                            manufacturer.contains("vivo") -> listOf(
+                                Intent().setComponent(ComponentName("com.vivo.permissionmanager",
+                                    "com.vivo.permissionmanager.activity.BgStartUpManagerActivity")),
+                                Intent().setComponent(ComponentName("com.iqoo.secure",
+                                    "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity"))
+                            )
+                            manufacturer.contains("samsung") -> listOf(
+                                Intent().setComponent(ComponentName("com.samsung.android.lool",
+                                    "com.samsung.android.sm.battery.ui.BatteryActivity")),
+                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = "package:${context.packageName}".toUri()
+                                }
+                            )
+                            manufacturer.contains("huawei") || manufacturer.contains("honor") -> listOf(
+                                Intent().setComponent(ComponentName("com.huawei.systemmanager",
+                                    "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity")),
+                                Intent().setComponent(ComponentName("com.huawei.systemmanager",
+                                    "com.huawei.systemmanager.optimize.process.ProtectActivity"))
+                            )
+                            else -> emptyList()
+                        }
+                        // Return the first intent that resolves on this device
+                        candidates.firstOrNull { intent ->
+                            try { context.packageManager.resolveActivity(intent, 0) != null } catch (_: Exception) { false }
+                        }
+                    }
 
+                    if (oemAutostartIntent != null) {
+                        PermissionRow(
+                            title = "OEM Autostart Permission",
+                            description = "Allow EdgeGuard to restart after reboot and survive memory pressure on your phone.",
+                            // We cannot query the OEM toggle programmatically — always show as a prompt
+                            isGranted = false,
+                            onToggle = {
+                                try { context.startActivity(oemAutostartIntent) } catch (e: Exception) {
+                                    // Fallback: open app settings if the OEM screen is unavailable
+                                    context.startActivity(
+                                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                            data = "package:${context.packageName}".toUri()
+                                        }
+                                    )
+                                }
+                            }
+                        )
+                    }
+
+
+                }
+            }
+
+            var trustedList by remember { mutableStateOf(ContactUtils.getTrustedDisplayList(context)) }
+
+            Text(
+                "Trusted Senders",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.Start)
+            )
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = {
+                                trustedList = ContactUtils.getTrustedDisplayList(context)
+                            },
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Trusted Senders (${trustedList.size})")
+                        }
+                        if (trustedList.isNotEmpty()) {
+                            TextButton(
+                                onClick = {
+                                    ContactUtils.clearTrustedSenders(context)
+                                    trustedList = emptyList()
+                                }
+                            ) {
+                                Text("Clear All", color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+
+                    Text(
+                        "Messages from these contacts/numbers will never be scanned for scams:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    if (trustedList.isEmpty()) {
+                        Text(
+                            "No trusted senders yet. Tap 'Trust This Sender' on any scam alert to whitelist a number.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    } else {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            trustedList.forEach { senderItem ->
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    tonalElevation = 2.dp
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            senderItem,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        IconButton(
+                                            onClick = {
+                                                ContactUtils.removeTrustedSender(context, senderItem)
+                                                trustedList = ContactUtils.getTrustedDisplayList(context)
+                                            },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Delete,
+                                                contentDescription = "Remove",
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Text(
-                "Developed by EdgeGuard in collaboration with Indore cyber cell. AI model is trained over the scam patterns observed in the recent complaints in Indore.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 16.dp)
-            )
+                    .padding(vertical = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    "Developed by Parv Khandelwal",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    "In collaboration with Indore cyber cell. AI model is trained over the scam patterns observed in the recent complaints in Indore.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+            }
 
             Spacer(modifier = Modifier.weight(1f))
         }
@@ -444,6 +626,12 @@ fun HomeScreen(navController: NavController) {
         }
     }
 
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            db.messageDao().deleteJunkUiMessages()
+        }
+    }
+
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
@@ -454,6 +642,9 @@ fun HomeScreen(navController: NavController) {
                 isPhoneStatePermissionGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
                 isOverlayPermissionGranted = Settings.canDrawOverlays(context)
                 isBatteryOptimized = pm.isIgnoringBatteryOptimizations(context.packageName)
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                    db.messageDao().deleteJunkUiMessages()
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -506,7 +697,7 @@ fun HomeScreen(navController: NavController) {
                     }
                 }
                 Text(
-                    "AI based scam detector", 
+                    "Your Personal Cyber Guard at edge", 
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -648,7 +839,7 @@ fun HomeScreen(navController: NavController) {
 fun MessageCard(message: MessageEntity, onDelete: () -> Unit) {
     val statusColor = when {
         message.analysisResult.contains("Scam") || message.analysisResult.contains("Alert") -> ErrorRed
-        message.analysisResult == "Safe" -> SuccessGreen
+        message.analysisResult == "Safe" || message.analysisResult.contains("Trusted") || message.analysisResult.contains("FALSE_POSITIVE") -> SuccessGreen
         else -> MaterialTheme.colorScheme.outline
     }
 
