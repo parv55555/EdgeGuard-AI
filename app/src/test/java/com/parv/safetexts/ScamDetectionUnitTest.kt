@@ -104,4 +104,83 @@ class ScamDetectionUnitTest {
         val resultMeeting = ScamAnalyzer.checkFastDeterministicScam(workCalendar)
         assertNull("Work meeting notification must NOT trigger scam alert", resultMeeting)
     }
+
+    @Test
+    fun testSpoofedBrandUrlObfuscationsAreFlagged() {
+        val spoofedUrls = listOf(
+            "flipkart:priyashopping.xyz",
+            "https://flipkart:priyashopping.xyz",
+            "flipkart:https://priyashopping.xyz",
+            "https://flipkart.com@priyashopping.xyz",
+            "flipkart.com@priyashopping.xyz",
+            "flipkart:offer@priyashopping.xyz",
+            "flipkart.priyashopping.xyz",
+            "shop.flipkart.priyashopping.xyz",
+            "flipkartpriya.xyz",
+            "flipkartsale.xyz",
+            "priyaflipkart.in",
+            "amazonsale.shop",
+            "priyashopping.xyz/flipkart",
+            "https://google-verify.xyz/search?q=login"
+        )
+
+        for (url in spoofedUrls) {
+            val scan = FraudDetectionEngine.analyze(url, url)
+            assertTrue("Expected score >= 50 for spoofed URL '$url', got ${scan.score} (${scan.reasons})", scan.score >= 50)
+
+            val msgAlert = ScamAnalyzer.checkFastDeterministicScam("Claim your deal at $url")
+            assertNotNull("Message containing spoofed URL '$url' must be flagged", msgAlert)
+        }
+    }
+
+    @Test
+    fun testSpoofedDomainAfterSafeUrlInMessageIsCaught() {
+        val message = "Compare prices on https://www.flipkart.com or claim offer at flipkart:priyashopping.xyz"
+        val result = ScamAnalyzer.checkFastDeterministicScam(message)
+        assertNotNull("Message hiding spoofed URL after legitimate URL must be flagged", result)
+        assertEquals("EdgeGuard WebShield", result?.first)
+    }
+
+    @Test
+    fun testBrandImpersonationWithSpaceColonOrPaytmIsFlagged() {
+        val flipkartColonText = ScamAnalyzer.checkFastDeterministicScam("Flipkart: priyashopping.xyz")
+        assertNotNull("Flipkart colon prefix with burner domain must be flagged", flipkartColonText)
+
+        val paytmColonText = ScamAnalyzer.checkFastDeterministicScam("Paytm: getbonus.xyz")
+        assertNotNull("Paytm colon prefix with burner domain must be flagged", paytmColonText)
+    }
+
+    @Test
+    fun testLegitimateWebUrlsAndEmailsDoNotFalsePositive() {
+        val safeCases = listOf(
+            "https://www.flipkart.com/big-billion-days" to "",
+            "https://fkrt.it/abc123" to "",
+            "https://www.google.com/search?q=flipkart:priyashopping.xyz" to "",
+            "https://gmail.com" to "",
+            "https://pineapple.com" to "",
+            "https://amazonia.org" to "",
+            "https://app.netlify.com" to "",
+            "https://pay.acmecorp.com" to "",
+            "https://art.gallery.org" to "",
+            "https://apply.indeed.com" to "",
+            "https://green-apple-recipes.com" to "",
+            "https://myblog.com/auth/google" to "",
+            "https://myblog.xyz" to "I bought this microphone on Amazon last week"
+        )
+
+        for ((url, text) in safeCases) {
+            val scan = FraudDetectionEngine.analyze(url, text)
+            assertTrue("Legitimate URL '$url' must score < 50, got ${scan.score} (${scan.reasons})", scan.score < 50)
+        }
+
+        val safeMessages = listOf(
+            "Email your resume to parv335@gmail.com or john.doe@acmecorp.com by tomorrow.",
+            "Please review invoice.pdf before our 10:30 standup.",
+            "Check https://app.netlify.com for the latest preview deployment."
+        )
+        for (msg in safeMessages) {
+            val result = ScamAnalyzer.checkFastDeterministicScam(msg)
+            assertNull("Safe message must not trigger alert: '$msg' -> $result", result)
+        }
+    }
 }

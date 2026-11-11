@@ -2101,6 +2101,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
     }
 
     private var lastBrowserScanDomain: String = ""
+    private var lastBrowserScanUrl: String = ""
     private var lastBrowserScanTime: Long = 0L
     private var lastAlertSavedDomain: String = ""
     private var lastAlertSavedTime: Long = 0L
@@ -2122,7 +2123,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
         }
 
         val now = System.currentTimeMillis()
-        if (domain == lastBrowserScanDomain && (now - lastBrowserScanTime) < 3000L) {
+        if (domain == lastBrowserScanDomain && urlText == lastBrowserScanUrl && (now - lastBrowserScanTime) < 3000L) {
             return
         }
 
@@ -2131,6 +2132,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
         val renderedText = textList.joinToString(" ")
 
         lastBrowserScanDomain = domain
+        lastBrowserScanUrl = urlText
         lastBrowserScanTime = now
 
         Log.d("BrowserFraud", "Scanning URL: $urlText (domain: $domain)")

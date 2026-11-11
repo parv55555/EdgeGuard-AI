@@ -8,6 +8,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.util.Log
@@ -58,6 +59,22 @@ class ScamAnalyzer private constructor(private val context: Context) {
         @Volatile
         private var instance: ScamAnalyzer? = null
         private val WHITESPACE_REGEX = Regex("\\s+")
+        private val JUNK_UI_TEXTS = setOf(
+            "settings", "account", "privacy", "avatar", "chats", "notifications", "storage and data",
+            "app language", "help", "invite a friend", "wallpaper", "media, links, and docs", "search",
+            "mute notifications", "disappearing messages", "more", "view contact", "clear chat", "export chat",
+            "add shortcut", "security notifications", "two-step verification", "change number", "request account info",
+            "delete my account", "passkeys", "email address", "last seen and online", "profile photo", "about",
+            "status", "read receipts", "default message timer", "groups", "live location", "calls", "blocked contacts",
+            "fingerprint lock", "chat lock", "theme", "chat backup", "chat history", "enter is send",
+            "media visibility", "font size", "keep chats archived", "transfer chats", "conversation tones",
+            "vibrate", "popup notification", "light", "high priority notifications", "reaction notifications",
+            "manage storage", "network usage", "use less data for calls", "proxy", "media auto-download",
+            "when using mobile data", "when connected on wi-fi", "when roaming", "photo upload quality",
+            "help center", "contact us", "terms and privacy policy", "app info", "screen reader", "whatsapp",
+            "messages", "conversations", "contacts", "archived", "spam and blocked", "security",
+            "general", "advanced", "sim card", "automatic preview", "swipe actions"
+        )
 
         fun getInstance(context: Context): ScamAnalyzer {
             return instance ?: synchronized(this) {
@@ -65,8 +82,48 @@ class ScamAnalyzer private constructor(private val context: Context) {
             }
         }
 
+        fun isTelecomServiceMessage(text: String): Boolean {
+            val lower = text.lowercase()
+            
+            // Never whitelist messages containing links or APK attachments
+            if (lower.contains(".apk") || lower.contains("http://") || lower.contains("https://") || lower.contains("bit.ly")) {
+                return false
+            }
+
+            // 1. Missed call alerts (whether sent by telecom or routed through caller's numeric phone number)
+            val isMissedCall = lower.contains("missed call") || 
+                               lower.contains("missed a call") || 
+                               lower.contains("u missed a call") || 
+                               lower.contains("you missed a call") ||
+                               lower.contains("call alert") ||
+                               lower.contains("tried calling you") ||
+                               lower.contains("called you while")
+
+            // 2. Call availability alerts (when caller becomes available to take calls)
+            val isCallAvailable = (lower.contains("available to take") || 
+                                   lower.contains("available to receive") || 
+                                   lower.contains("now available") || 
+                                   lower.contains("is available") ||
+                                   lower.contains("now reachable") ||
+                                   lower.contains("can be reached")) && 
+                                  (lower.contains("call") || lower.contains("calling") || lower.contains("phone") || lower.contains("number"))
+
+            // 3. Carrier balance, validity, plan updates
+            val isCarrierUpdate = lower.contains("recharge of") || 
+                                  lower.contains("plan validity") || 
+                                  lower.contains("pack expired") || 
+                                  lower.contains("data pack exhausted") || 
+                                  lower.contains("daily data limit")
+
+            return isMissedCall || isCallAvailable || isCarrierUpdate
+        }
+
         fun checkFastDeterministicScam(text: String): Pair<String, Float>? {
             val lower = text.lowercase()
+            // 0. Whitelist legitimate telecom operator service notifications
+            if (isTelecomServiceMessage(text)) {
+                return Pair("Safe", 0.0f)
+            }
             // 1. APK files
             if (lower.contains(".apk")) {
                 return Pair("Alert", 1.0f)
@@ -119,6 +176,19 @@ class ScamAnalyzer private constructor(private val context: Context) {
                 (lower.contains("link") || lower.contains("http") || lower.contains("bit.ly") || lower.contains("click"))) {
                 return Pair("Alert", 0.95f)
             }
+            // 11. Malicious Web Fraud, Fake Govt & Bank URLs in Messages
+            val highestRisk = FraudDetectionEngine.findHighestRiskUrlInText(text)
+            if (highestRisk != null) {
+                val scan = highestRisk.second
+                if (scan.score >= 50) {
+                    val alertTag = when (scan.fraudCategory) {
+                        "GOVERNMENT" -> "Fake Govt WebShield"
+                        "BANK" -> "Bank Phishing WebShield"
+                        else -> "EdgeGuard WebShield"
+                    }
+                    return Pair(alertTag, (scan.score / 100f).coerceAtLeast(0.95f))
+                }
+            }
             return null
         }
     }
@@ -136,28 +206,43 @@ class ScamAnalyzer private constructor(private val context: Context) {
         }
     }
 
-    fun analyzeMessage(message: MessageEntity, onDuplicateScam: ((MessageEntity) -> Unit)? = null, isApk: Boolean = false, isFakeCredit: Boolean = false) {
+    fun analyzeMessage(message: MessageEntity, onDuplicateScam: ((MessageEntity) -> Unit)? = null, isApk: Boolean = false, isFakeCredit: Boolean = false, forceRealert: Boolean = false) {
         val senderLower = message.sender.lowercase().trim()
         val contentLower = message.content.lowercase().trim()
 
-        if (contentLower.isEmpty() || senderLower == "settings" || senderLower == "whatsapp" || senderLower == "chats") {
+        if (contentLower.isEmpty() || 
+            senderLower in JUNK_UI_TEXTS || 
+            contentLower in JUNK_UI_TEXTS ||
+            contentLower.contains("security notifications, change number") ||
+            contentLower.contains("theme, wallpapers") ||
+            contentLower.contains("network usage, auto-download") ||
+            contentLower.contains("help center, contact us") ||
+            contentLower.contains("create, edit, profile photo") ||
+            contentLower.contains("manage people and groups") ||
+            contentLower.contains("block contacts, disappearing messages") ||
+            contentLower.contains("message, group & call tones")) {
+            return
+        }
+
+        if (!isApk && ContactUtils.isTrustedSender(context, message.sender)) {
+            Log.d("ScamAnalyzer", "Skipping analysis for trusted sender: ${message.sender}")
+            return
+        }
+
+        val cleanText = message.content.replace("\n", " ").replace(WHITESPACE_REGEX, " ").trim()
+        if (!isApk && isTelecomServiceMessage(cleanText)) {
+            Log.d("ScamAnalyzer", "Whitelisted legitimate telecom carrier notification: ${cleanText.take(30)}")
             return
         }
 
         val msgHash = (message.sender + message.content).hashCode()
         val currentTime = System.currentTimeMillis()
 
-        // 1. If already saved in Room DB in this session, skip immediately (unless it's an APK threat)
-        if (!isApk && recordedInDb.contains(msgHash)) {
-            return
-        }
-
-        // 2. Prevent duplicate concurrent processing of the exact same message
+        // Prevent duplicate concurrent processing of the exact same message in flight
         if (!isApk && !inProgressHashes.add(msgHash)) {
             return
         }
 
-        val cleanText = message.content.replace("\n", " ").replace(WHITESPACE_REGEX, " ").trim()
         val cached = classificationCache[msgHash]
         val fastScam = if (!isApk && !isFakeCredit && cached == null) checkFastDeterministicScam(cleanText) else null
 
@@ -173,43 +258,50 @@ class ScamAnalyzer private constructor(private val context: Context) {
         // trigger the overlay IMMEDIATELY on the main thread without any coroutine scheduling jitter!
         if (immediateClassification != null) {
             val (result, scamProbability) = immediateClassification
-            val isScam = result == "Alert" || result == "Scam"
+            val isScam = result == "Alert" || result == "Scam" || result.contains("WebShield") || result.contains("Alert")
             if (isScam) {
                 val lastAlert = recentlyAlertedScams[msgHash]
-                val throttleTime = if (isApk) 3000L else 30000L
+                val throttleTime = if (forceRealert) 1000L else if (isApk) 20000L else 30000L
                 val shouldAlert = lastAlert == null || (currentTime - lastAlert) >= throttleTime
                 if (shouldAlert) {
-                    recentlyAlertedScams[msgHash] = currentTime
                     val alertMessage = message.copy(
                         analysisResult = result,
                         scamProbability = scamProbability
                     )
                     if (Looper.myLooper() == Looper.getMainLooper()) {
-                        showScamWarningOverlay(alertMessage, isApk = isApk, isFakeCredit = isFakeCredit)
+                        if (showScamWarningOverlay(alertMessage, isApk = isApk, isFakeCredit = isFakeCredit)) {
+                            recentlyAlertedScams[msgHash] = currentTime
+                        }
                     } else {
-                        scope.launch(Dispatchers.Main) {
-                            showScamWarningOverlay(alertMessage, isApk = isApk, isFakeCredit = isFakeCredit)
+                        Handler(Looper.getMainLooper()).post {
+                            if (showScamWarningOverlay(alertMessage, isApk = isApk, isFakeCredit = isFakeCredit)) {
+                                recentlyAlertedScams[msgHash] = currentTime
+                            }
                         }
                     }
                 }
             }
 
-            // Save into Room DB asynchronously on IO thread without holding up screen responsiveness
-            scope.launch(Dispatchers.IO) {
-                try {
-                    val existing = database.messageDao().getMessage(message.sender, message.content)
-                    if (existing == null) {
-                        val entity = message.copy(analysisResult = result, scamProbability = scamProbability)
-                        database.messageDao().insertMessage(entity)
-                    } else if (isScam && existing.analysisResult != "Alert" && existing.analysisResult != "Scam") {
-                        database.messageDao().updateMessage(existing.copy(analysisResult = result, scamProbability = scamProbability))
+            // Save into Room DB asynchronously on IO thread (only once per unique message)
+            if (!recordedInDb.contains(msgHash)) {
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        val existing = database.messageDao().getMessage(message.sender, message.content)
+                        if (existing == null) {
+                            val entity = message.copy(analysisResult = result, scamProbability = scamProbability)
+                            database.messageDao().insertMessage(entity)
+                        } else if (isScam && existing.analysisResult != "Alert" && existing.analysisResult != "Scam") {
+                            database.messageDao().updateMessage(existing.copy(analysisResult = result, scamProbability = scamProbability))
+                        }
+                        recordedInDb.add(msgHash)
+                    } catch (e: Throwable) {
+                        Log.e("ScamAnalyzer", "DB record failed: ${e.message}")
+                    } finally {
+                        inProgressHashes.remove(msgHash)
                     }
-                    recordedInDb.add(msgHash)
-                } catch (e: Throwable) {
-                    Log.e("ScamAnalyzer", "DB record failed: ${e.message}")
-                } finally {
-                    inProgressHashes.remove(msgHash)
                 }
+            } else {
+                inProgressHashes.remove(msgHash)
             }
             return
         }
@@ -227,28 +319,32 @@ class ScamAnalyzer private constructor(private val context: Context) {
                 val isScam = result == "Alert" || result == "Scam"
                 if (isScam) {
                     val lastAlert = recentlyAlertedScams[msgHash]
-                    val shouldAlert = lastAlert == null || (currentTime - lastAlert) >= 30000
+                    val throttleTime = if (forceRealert) 1000L else 30000L
+                    val shouldAlert = lastAlert == null || (currentTime - lastAlert) >= throttleTime
                     if (shouldAlert) {
-                        recentlyAlertedScams[msgHash] = currentTime
                         val alertMessage = message.copy(
                             analysisResult = result,
                             scamProbability = scamProbability
                         )
                         withContext(Dispatchers.Main) {
-                            showScamWarningOverlay(alertMessage)
+                            if (showScamWarningOverlay(alertMessage)) {
+                                recentlyAlertedScams[msgHash] = currentTime
+                            }
                         }
                     }
                 }
 
-                withContext(Dispatchers.IO) {
-                    val existing = database.messageDao().getMessage(message.sender, message.content)
-                    if (existing == null) {
-                        val entity = message.copy(analysisResult = result, scamProbability = scamProbability)
-                        database.messageDao().insertMessage(entity)
-                    } else if (isScam && existing.analysisResult != "Alert" && existing.analysisResult != "Scam") {
-                        database.messageDao().updateMessage(existing.copy(analysisResult = result, scamProbability = scamProbability))
+                if (!recordedInDb.contains(msgHash)) {
+                    withContext(Dispatchers.IO) {
+                        val existing = database.messageDao().getMessage(message.sender, message.content)
+                        if (existing == null) {
+                            val entity = message.copy(analysisResult = result, scamProbability = scamProbability)
+                            database.messageDao().insertMessage(entity)
+                        } else if (isScam && existing.analysisResult != "Alert" && existing.analysisResult != "Scam") {
+                            database.messageDao().updateMessage(existing.copy(analysisResult = result, scamProbability = scamProbability))
+                        }
+                        recordedInDb.add(msgHash)
                     }
-                    recordedInDb.add(msgHash)
                 }
 
                 Log.d("ScamAnalyzer", "Recorded message in Room DB for '${message.content.take(20)}...': $result ($scamProbability)")
@@ -260,17 +356,40 @@ class ScamAnalyzer private constructor(private val context: Context) {
         }
     }
 
-    fun showScamWarningOverlay(message: MessageEntity, isApk: Boolean = false, isFakeCredit: Boolean = false, isBrowserSpam: Boolean = false) {
+    fun showScamWarningOverlay(message: MessageEntity, isApk: Boolean = false, isFakeCredit: Boolean = false, isBrowserSpam: Boolean = false): Boolean {
         if (ScamAlertActivity.isAlertActive || OverlayUtils.isOverlayShowing) {
             Log.d("ScamAnalyzer", "Overlay/Alert already active. Skipping.")
-            return
+            return false
         }
 
+        val isWebFraud = isBrowserSpam || message.analysisResult.contains("WebShield") || message.sender.contains("WebShield")
+        val category = when {
+            message.analysisResult.contains("Govt") || message.sender.contains("Govt") -> "GOVERNMENT"
+            message.analysisResult.contains("Bank") || message.sender.contains("Bank") -> "BANK"
+            else -> "GENERIC"
+        }
+        val domainFromContent = if (isWebFraud) {
+            (FraudDetectionEngine.findHighestRiskUrlInText(message.content)?.first
+                ?: FraudDetectionEngine.findValidUrlInText(message.content))
+                ?.let { FraudDetectionEngine.extractDomain(it) }
+        } else null
+
         if (Settings.canDrawOverlays(context)) {
-            OverlayUtils.showScamCardOverlay(context, message, isApk, isFakeCredit, isBrowserSpam)
+            OverlayUtils.showScamCardOverlay(
+                context = context,
+                message = message,
+                isApk = isApk,
+                isFakeCredit = isFakeCredit,
+                isBrowserSpam = isBrowserSpam,
+                isFakeWebsite = isWebFraud,
+                websiteDomain = domainFromContent,
+                fraudCategory = category
+            )
+            return true
         } else {
             Log.w("ScamAnalyzer", "Overlay permission not granted. Showing fallback notification.")
             showScamWarningNotification(message)
+            return true
         }
     }
 
