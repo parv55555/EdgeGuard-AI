@@ -368,13 +368,13 @@ fun PermissionsScreen(navController: NavController) {
                     )
 
                     // OEM Autostart — deep-links to the OEM-specific "Autostart" / background
-                    // permission screen on MIUI, ColorOS, FuntouchOS and Samsung, so the user
-                    // can allow EdgeGuard to restart after boot and survive memory pressure on
-                    // Chinese phones where the standard Doze whitelist is not enough.
+                    // permission screen on MIUI, ColorOS and FuntouchOS only. Samsung and stock
+                    // Android respect the standard Doze whitelist, so they are excluded here —
+                    // the "Battery Optimization" button above is sufficient for them.
                     val oemAutostartIntent: Intent? = remember {
                         val manufacturer = Build.MANUFACTURER.lowercase(java.util.Locale.ROOT)
                         val candidates: List<Intent> = when {
-                            manufacturer.contains("xiaomi") || manufacturer.contains("redmi") -> listOf(
+                            manufacturer.contains("xiaomi") || manufacturer.contains("redmi") || manufacturer.contains("poco") -> listOf(
                                 Intent().setComponent(ComponentName("com.miui.securitycenter",
                                     "com.miui.permcenter.autostart.AutoStartManagementActivity")),
                                 Intent().setComponent(ComponentName("com.miui.powerkeeper",
@@ -394,13 +394,7 @@ fun PermissionsScreen(navController: NavController) {
                                 Intent().setComponent(ComponentName("com.iqoo.secure",
                                     "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity"))
                             )
-                            manufacturer.contains("samsung") -> listOf(
-                                Intent().setComponent(ComponentName("com.samsung.android.lool",
-                                    "com.samsung.android.sm.battery.ui.BatteryActivity")),
-                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                    data = "package:${context.packageName}".toUri()
-                                }
-                            )
+                            // Samsung: standard Doze whitelist (button above) is sufficient — excluded here.
                             manufacturer.contains("huawei") || manufacturer.contains("honor") -> listOf(
                                 Intent().setComponent(ComponentName("com.huawei.systemmanager",
                                     "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity")),
