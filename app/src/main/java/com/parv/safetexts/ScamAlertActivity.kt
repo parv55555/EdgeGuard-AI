@@ -82,8 +82,12 @@ class ScamAlertActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
-            setPadding(40, 60, 40, 60)
-            setOnClickListener { finish() }
+            val hPad = AlertCardBuilder.dp(this@ScamAlertActivity, 24)
+            val vPad = AlertCardBuilder.dp(this@ScamAlertActivity, 32)
+            setPadding(hPad, vPad, hPad, vPad)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { Log.d("ScamAlertActivity", "Background dim tapped: retained alert") }
         }
 
         val cardView = buildCardForType(alertType)
@@ -138,58 +142,58 @@ class ScamAlertActivity : Activity() {
             }
             TYPE_BOOKING -> AlertCardBuilder.buildSimpleAlertCard(
                 this,
-                title = "✈️ TRAVEL SAFETY ALERT",
+                title = "TRAVEL BOOKING SAFETY TIP",
                 titleColor = "#1565C0",
                 strokeColor = "#1976D2",
                 bgColor = "#E3F2FD",
-                message = "You are searching for travel bookings (hotels, flights, dhams, buses).\n\nNever pay travel agents or booking services an advance over WhatsApp using QR codes or UPI.\n\nDo bookings only from official & genuine websites.\n\nScammers create fake listings to steal your money.",
+                message = "Be cautious of booking agents asking for advance payments via WhatsApp QR codes or personal UPI IDs. Verify listings and book only on official apps or websites.",
                 onDismiss = { finish() }
             )
             TYPE_HELPLINE -> AlertCardBuilder.buildSimpleAlertCard(
                 this,
-                title = "📞 CUSTOMER CARE ALERT",
+                title = "HELPLINE SAFETY REMINDER",
                 titleColor = "#E65100",
                 strokeColor = "#F57C00",
                 bgColor = "#FFF3E0",
-                message = "You are searching for customer care or helplines.\n\nBe very careful of numbers found on Google search results or 3rd party websites.\n\nScammers post fake customer care numbers online to steal your money by asking you to download screen sharing apps or share OTPs.\n\nOnly use contact details found inside the official app.",
+                message = "Helpline numbers found through web search are sometimes fake. Check the official app or website directly, and never share OTPs or install remote-access apps.",
                 onDismiss = { finish() }
             )
             TYPE_LOAN -> AlertCardBuilder.buildSimpleAlertCard(
                 this,
-                title = "💰 LOAN SAFETY ALERT",
+                title = "LOAN SAFETY REMINDER",
                 titleColor = "#E65100",
                 strokeColor = "#F57C00",
                 bgColor = "#FFF3E0",
-                message = "You are searching for loans online.\n\n⚠️ NEVER download unauthorized loan apps sent via WhatsApp or SMS.\n\n⚠️ NEVER pay an 'advance fee', 'processing fee', or 'GST' to get a loan approved.\n\nScammers use these tricks to steal money and hijack your phone contacts.",
+                message = "Be cautious of instant-loan offers asking for upfront “processing fees” or APK downloads via WhatsApp. Check that the lender is RBI-registered before applying.",
                 onDismiss = { finish() }
             )
             TYPE_JOB -> AlertCardBuilder.buildSimpleAlertCard(
                 this,
-                title = "💼 JOB SAFETY ALERT",
+                title = "JOB SAFETY REMINDER",
                 titleColor = "#1976D2",
                 strokeColor = "#1976D2",
                 bgColor = "#E3F2FD",
-                message = "You are searching for online jobs or tasks.\n\n⚠️ NEVER pay a 'registration fee', 'security deposit', or any sort of fee for a job. If asked for registration money etc, then it's a scam.",
+                message = "Be cautious of online jobs or tasks asking for registration fees or deposits—upfront payment requests are a strong red flag for job scams.",
                 onDismiss = { finish() }
             )
             TYPE_TRADING -> AlertCardBuilder.buildSimpleAlertCard(
                 this,
-                title = "📈 TRADING SAFETY ALERT",
+                title = "TRADING SAFETY REMINDER",
                 titleColor = "#2E7D32",
                 strokeColor = "#2E7D32",
                 bgColor = "#E8F5E9",
-                message = "You are searching for trading or cryptocurrency.\n\n⚠️ NEVER join 'VIP Trading Groups' on Telegram or WhatsApp for stock tips.\n\n⚠️ Beware of platforms promising guaranteed high returns or risk-free profits. If it sounds too good to be true, it's a scam designed to steal your investments.",
+                message = "Be cautious of VIP trading groups promising guaranteed returns. Always verify brokers with SEBI before depositing money.",
                 onDismiss = { finish() }
             )
             TYPE_FAKE_BOOKING -> {
                 val chatTitle = intent.getStringExtra(EXTRA_CHAT_TITLE) ?: "Unknown"
                 AlertCardBuilder.buildSimpleAlertCard(
                     this,
-                    title = "⚠️ BOOKING SCAM WARNING",
+                    title = "UNVERIFIED BOOKING WARNING",
                     titleColor = "#E65100",
                     strokeColor = "#F57C00",
                     bgColor = "#FFF3E0",
-                    message = "You are discussing a booking or service with '$chatTitle' and they have requested payment.\n\nScammers frequently create fake listings and websites to steal advance payments via QR codes.\n\nNEVER scan a QR code for an unverified booking or service.",
+                    message = "This chat with '$chatTitle' looks like an unverified booking request. Avoid scanning QR codes or paying advance fees over chat without verifying the service first.",
                     onDismiss = { finish() }
                 )
             }
@@ -205,3 +209,4 @@ class ScamAlertActivity : Activity() {
         }
     }
 }
+

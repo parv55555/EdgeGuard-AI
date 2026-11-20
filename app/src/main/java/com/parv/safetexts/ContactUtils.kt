@@ -28,8 +28,109 @@ object ContactUtils {
         return digitCount < 7
     }
 
+    private val BIDI_REGEX = Regex("[\\u200E\\u200F\\u202A-\\u202E]")
+
+    fun addTrustedSender(context: Context, sender: String) {
+        val cleanSender = sender.trim().replace(BIDI_REGEX, "")
+        if (cleanSender.isBlank()) return
+        val prefs = context.getSharedPreferences("safetexts_prefs", Context.MODE_PRIVATE)
+
+        // Store human-readable display string
+        val displaySet = prefs.getStringSet("trusted_senders_display", emptySet())?.toMutableSet() ?: mutableSetOf()
+        displaySet.add(cleanSender)
+
+        // Store fast lookup representations
+        val currentSet = prefs.getStringSet("trusted_senders", emptySet())?.toMutableSet() ?: mutableSetOf()
+        currentSet.add(cleanSender.lowercase())
+        
+        val normalized = cleanSender.replace(Regex("[^0-9+]"), "")
+        if (normalized.isNotEmpty()) {
+            currentSet.add(normalized)
+        }
+        val digitsOnly = cleanSender.filter { it.isDigit() }
+        if (digitsOnly.length >= 7) {
+            currentSet.add(digitsOnly)
+            if (digitsOnly.length >= 10) {
+                currentSet.add(digitsOnly.takeLast(10))
+            }
+        }
+        prefs.edit()
+            .putStringSet("trusted_senders_display", displaySet)
+            .putStringSet("trusted_senders", currentSet)
+            .apply()
+        android.util.Log.d("ContactUtils", "Added trusted sender: '$cleanSender'")
+    }
+
+    fun isTrustedSender(context: Context, sender: String): Boolean {
+        val cleanSender = sender.trim().replace(BIDI_REGEX, "")
+        if (cleanSender.isBlank()) return false
+        val prefs = context.getSharedPreferences("safetexts_prefs", Context.MODE_PRIVATE)
+        val trusted = prefs.getStringSet("trusted_senders", emptySet()) ?: emptySet()
+        if (trusted.contains(cleanSender.lowercase())) return true
+
+        val normalized = cleanSender.replace(Regex("[^0-9+]"), "")
+        if (normalized.isNotEmpty() && trusted.contains(normalized)) return true
+
+        val digitsOnly = cleanSender.filter { it.isDigit() }
+        if (digitsOnly.length >= 7) {
+            if (trusted.contains(digitsOnly)) return true
+            if (digitsOnly.length >= 10 && trusted.contains(digitsOnly.takeLast(10))) return true
+        }
+        return false
+    }
+
+    fun removeTrustedSender(context: Context, sender: String) {
+        val cleanSender = sender.trim().replace(BIDI_REGEX, "")
+        if (cleanSender.isBlank()) return
+        val prefs = context.getSharedPreferences("safetexts_prefs", Context.MODE_PRIVATE)
+
+        val displaySet = prefs.getStringSet("trusted_senders_display", emptySet())?.toMutableSet() ?: mutableSetOf()
+        displaySet.remove(cleanSender)
+
+        val currentSet = prefs.getStringSet("trusted_senders", emptySet())?.toMutableSet() ?: mutableSetOf()
+        currentSet.remove(cleanSender.lowercase())
+        val normalized = cleanSender.replace(Regex("[^0-9+]"), "")
+        if (normalized.isNotEmpty()) currentSet.remove(normalized)
+        val digitsOnly = cleanSender.filter { it.isDigit() }
+        if (digitsOnly.length >= 7) {
+            currentSet.remove(digitsOnly)
+            if (digitsOnly.length >= 10) currentSet.remove(digitsOnly.takeLast(10))
+        }
+        prefs.edit()
+            .putStringSet("trusted_senders_display", displaySet)
+            .putStringSet("trusted_senders", currentSet)
+            .apply()
+        android.util.Log.d("ContactUtils", "Removed trusted sender: '$cleanSender'")
+    }
+
+    fun clearTrustedSenders(context: Context) {
+        val prefs = context.getSharedPreferences("safetexts_prefs", Context.MODE_PRIVATE)
+        prefs.edit()
+            .remove("trusted_senders_display")
+            .remove("trusted_senders")
+            .apply()
+    }
+
+    fun getTrustedDisplayList(context: Context): List<String> {
+        val prefs = context.getSharedPreferences("safetexts_prefs", Context.MODE_PRIVATE)
+        val displaySet = prefs.getStringSet("trusted_senders_display", null)
+        if (!displaySet.isNullOrEmpty()) {
+            return displaySet.toList().sorted()
+        }
+        val legacy = prefs.getStringSet("trusted_senders", emptySet()) ?: emptySet()
+        return legacy.filter { it.length >= 7 || !it.all { c -> c.isDigit() } }.toList().sorted()
+    }
+
+    fun getTrustedSenders(context: Context): Set<String> {
+        val prefs = context.getSharedPreferences("safetexts_prefs", Context.MODE_PRIVATE)
+        return prefs.getStringSet("trusted_senders_display", null) 
+            ?: prefs.getStringSet("trusted_senders", emptySet()) 
+            ?: emptySet()
+    }
+
     fun isContactExists(context: Context, senderName: String): Boolean {
         if (senderName.isEmpty()) return false
+        if (isTrustedSender(context, senderName)) return true
         try {
             // 1. Try PhoneLookup (best for phone numbers)
             val phoneUri = Uri.withAppendedPath(
@@ -65,5 +166,11 @@ object ContactUtils {
     fun isAlphabetOrAlphanumeric(name: String): Boolean {
         if (name.isBlank()) return false
         return name.any { it.isLetter() }
+    }
+
+    fun isRawPhoneNumber(title: String): Boolean {
+        if (title.isBlank()) return false
+        val digits = title.count { it.isDigit() }
+        return digits >= 7 && title.matches(Regex("^[\\d\\s\\+\\-\\(\\)]+$"))
     }
 }

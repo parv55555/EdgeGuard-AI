@@ -183,4 +183,77 @@ class ScamDetectionUnitTest {
             assertNull("Safe message must not trigger alert: '$msg' -> $result", result)
         }
     }
+
+    @Test
+    fun testRevisedAlertCopyCatalogue() {
+        // #1 Bank / KYC
+        val (kycTitle, kycBody) = AlertCardBuilder.resolveScamCopy("Dear customer, your bank account is suspended due to PAN KYC. Update immediately.")
+        assertEquals("POTENTIAL SCAM ALERT", kycTitle)
+        assertTrue(kycBody.contains("KYC or account-block scam"))
+
+        // #2 Electricity
+        val (elecTitle, elecBody) = AlertCardBuilder.resolveScamCopy("Your electricity power will be disconnected tonight at 9:30 due to unpaid bill.")
+        assertEquals("POSSIBLE UTILITY SCAM", elecTitle)
+        assertTrue(elecBody.contains("fake power-disconnection threat"))
+
+        // #3 Prize / Lottery
+        val (lotteryTitle, lotteryBody) = AlertCardBuilder.resolveScamCopy("Congratulations! You won 25 Lakh in KBC lottery prize lucky draw.")
+        assertEquals("SUSPICIOUS PRIZE MESSAGE", lotteryTitle)
+        assertTrue(lotteryBody.contains("lottery or prize scam"))
+
+        // #4 Job Offer
+        val (jobTitle, jobBody) = AlertCardBuilder.resolveScamCopy("Earn 5000 daily per day by simple YouTube part time tasks.")
+        assertEquals("SUSPICIOUS JOB OFFER", jobTitle)
+        assertTrue(jobBody.contains("part-time task or job scam"))
+
+        // #5 Challan APK
+        val (challanTitle, challanBody) = AlertCardBuilder.resolveScamCopy("Pay traffic echallan fine immediately", isApk = true)
+        assertEquals("SUSPICIOUS APK FILE", challanTitle)
+        assertTrue(challanBody.contains("unverified challan APK file"))
+
+        // #6 Sextortion / Digital Arrest
+        val (arrestTitle, arrestBody) = AlertCardBuilder.resolveScamCopy("CBI police digital arrest warrant issued against you.")
+        assertEquals("POSSIBLE IMPERSONATION SCAM", arrestTitle)
+        assertTrue(arrestBody.contains("fake legal or “digital arrest” threat"))
+
+        // #7 India Post / Courier
+        val (postTitle, postBody) = AlertCardBuilder.resolveScamCopy("India Post courier package delivery failed. Update address.")
+        assertEquals("SUSPICIOUS DELIVERY LINK", postTitle)
+        assertTrue(postBody.contains("courier or address-update scam"))
+
+        // #8 Remote Access
+        val (ratTitle, ratBody) = AlertCardBuilder.resolveScamCopy("Download AnyDesk to fix bank issue.")
+        assertEquals("OTP & REMOTE ACCESS WARNING", ratTitle)
+        assertTrue(ratBody.contains("ask for your OTP or remote access"))
+
+        // #9 Pre-Approved Loan
+        val (loanTitle, loanBody) = AlertCardBuilder.resolveScamCopy("Your pre-approved loan of 500000 is credited. Click link to claim.")
+        assertEquals("SUSPICIOUS FINANCIAL OFFER", loanTitle)
+        assertTrue(loanBody.contains("phishing link disguised as a loan"))
+
+        // #10 Fake Credit
+        val (creditTitle, creditBody) = AlertCardBuilder.resolveScamCopy("A/C 123 credited with 50,000", isFakeCredit = true)
+        assertEquals("UNVERIFIED CREDIT MESSAGE", creditTitle)
+        assertTrue(creditBody.contains("fake credit alert"))
+
+        // #11 Govt WebShield
+        val (govtTitle, govtBody) = AlertCardBuilder.resolveScamCopy("fake portal", isFakeWebsite = true, fraudCategory = "GOVERNMENT")
+        assertEquals("UNVERIFIED GOVT WEBSITE", govtTitle)
+        assertTrue(govtBody.contains("unofficial government portal"))
+
+        // #12 Bank WebShield
+        val (bankTitle, bankBody) = AlertCardBuilder.resolveScamCopy("fake bank login", isFakeWebsite = true, fraudCategory = "BANK")
+        assertEquals("UNVERIFIED BANKING PAGE", bankTitle)
+        assertTrue(bankBody.contains("phishing page"))
+
+        // #13 Brand Impersonation / Website warning
+        val (webTitle, webBody) = AlertCardBuilder.resolveScamCopy("phishing site", isFakeWebsite = true)
+        assertEquals("SUSPICIOUS WEBSITE WARNING", webTitle)
+        assertTrue(webBody.contains("Double-check the web address"))
+
+        // #14 General AI
+        val (generalTitle, generalBody) = AlertCardBuilder.resolveScamCopy("Random suspicious message")
+        assertEquals("POTENTIAL SCAM ALERT", generalTitle)
+        assertTrue(generalBody.contains("matches patterns commonly seen in scams"))
+    }
 }

@@ -40,8 +40,16 @@ object OverlayUtils {
 
                     val rootLayout = FrameLayout(appContext).apply {
                         setBackgroundColor(Color.parseColor("#99000000")) // Semi-transparent dim background
-                        setPadding(40, 60, 40, 60)
-                        setOnClickListener { dismissOverlay(appContext) }
+                        val hPad = AlertCardBuilder.dp(appContext, 24)
+                        val vPad = AlertCardBuilder.dp(appContext, 32)
+                        setPadding(hPad, vPad, hPad, vPad)
+                        // Consume touches to prevent click-through to apps behind; do NOT dismiss on outside tap.
+                        // Critical security alerts require explicit user action ([DISMISS] or [LOOKS SAFE]).
+                        isClickable = true
+                        isFocusable = true
+                        setOnClickListener {
+                            Log.d("OverlayUtils", "Background dim tapped: retained alert to prevent accidental dismissal")
+                        }
                     }
 
                     val card = cardBuilder(appContext) { dismissOverlay(appContext) }
@@ -62,9 +70,10 @@ object OverlayUtils {
                             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                         else
                             @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
-                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                        WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED,
+                        WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                        WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS,
                         PixelFormat.TRANSLUCENT
                     ).apply {
                         gravity = Gravity.CENTER
@@ -90,11 +99,12 @@ object OverlayUtils {
 
     fun dismissOverlay(context: Context) {
         val appContext = context.applicationContext
-        Handler(Looper.getMainLooper()).post {
+        val doDismiss = Runnable {
             try {
                 currentOverlayView?.let {
                     val windowManager = appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
                     windowManager.removeView(it)
+                    Log.d("OverlayUtils", "Overlay view dismissed cleanly by explicit user action")
                 }
             } catch (e: Exception) {
                 Log.e("OverlayUtils", "Error removing overlay view: ${e.message}")
@@ -103,6 +113,11 @@ object OverlayUtils {
                 isOverlayShowing = false
             }
         }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            doDismiss.run()
+        } else {
+            Handler(Looper.getMainLooper()).post(doDismiss)
+        }
     }
 
     fun showScamCardOverlay(
@@ -110,7 +125,10 @@ object OverlayUtils {
         message: MessageEntity,
         isApk: Boolean = false,
         isFakeCredit: Boolean = false,
-        isBrowserSpam: Boolean = false
+        isBrowserSpam: Boolean = false,
+        isFakeWebsite: Boolean = false,
+        websiteDomain: String? = null,
+        fraudCategory: String? = null
     ) {
         showSystemOverlay(context) { ctx, onDismiss ->
             AlertCardBuilder.buildScamCard(
@@ -121,6 +139,9 @@ object OverlayUtils {
                 isApk = isApk,
                 isFakeCredit = isFakeCredit,
                 isBrowserSpam = isBrowserSpam,
+                isFakeWebsite = isFakeWebsite,
+                websiteDomain = websiteDomain,
+                fraudCategory = fraudCategory,
                 onDismiss = onDismiss
             )
         }
@@ -172,11 +193,11 @@ object OverlayUtils {
         showSystemOverlay(context) { ctx, onDismiss ->
             AlertCardBuilder.buildSimpleAlertCard(
                 ctx,
-                title = "✈️ TRAVEL SAFETY ALERT",
+                title = "TRAVEL BOOKING SAFETY TIP",
                 titleColor = "#1565C0",
                 strokeColor = "#1976D2",
                 bgColor = "#E3F2FD",
-                message = "You are searching for travel bookings (hotels, flights, dhams, buses).\n\nNever pay travel agents or booking services an advance over WhatsApp using QR codes or UPI.\n\nDo bookings only from official & genuine websites.\n\nScammers create fake listings to steal your money.",
+                message = "Be cautious of booking agents asking for advance payments via WhatsApp QR codes or personal UPI IDs. Verify listings and book only on official apps or websites.",
                 onDismiss = onDismiss
             )
         }
@@ -186,11 +207,11 @@ object OverlayUtils {
         showSystemOverlay(context) { ctx, onDismiss ->
             AlertCardBuilder.buildSimpleAlertCard(
                 ctx,
-                title = "📞 CUSTOMER CARE ALERT",
+                title = "HELPLINE SAFETY REMINDER",
                 titleColor = "#E65100",
                 strokeColor = "#F57C00",
                 bgColor = "#FFF3E0",
-                message = "You are searching for customer care or helplines.\n\nBe very careful of numbers found on Google search results or 3rd party websites.\n\nScammers post fake customer care numbers online to steal your money by asking you to download screen sharing apps or share OTPs.\n\nOnly use contact details found inside the official app.",
+                message = "Helpline numbers found through web search are sometimes fake. Check the official app or website directly, and never share OTPs or install remote-access apps.",
                 onDismiss = onDismiss
             )
         }
@@ -200,11 +221,11 @@ object OverlayUtils {
         showSystemOverlay(context) { ctx, onDismiss ->
             AlertCardBuilder.buildSimpleAlertCard(
                 ctx,
-                title = "💰 LOAN SAFETY ALERT",
+                title = "LOAN SAFETY REMINDER",
                 titleColor = "#E65100",
                 strokeColor = "#F57C00",
                 bgColor = "#FFF3E0",
-                message = "You are searching for loans online.\n\n⚠️ NEVER download unauthorized loan apps sent via WhatsApp or SMS.\n\n⚠️ NEVER pay an 'advance fee', 'processing fee', or 'GST' to get a loan approved.\n\nScammers use these tricks to steal money and hijack your phone contacts.",
+                message = "Be cautious of instant-loan offers asking for upfront “processing fees” or APK downloads via WhatsApp. Check that the lender is RBI-registered before applying.",
                 onDismiss = onDismiss
             )
         }
@@ -214,11 +235,11 @@ object OverlayUtils {
         showSystemOverlay(context) { ctx, onDismiss ->
             AlertCardBuilder.buildSimpleAlertCard(
                 ctx,
-                title = "💼 JOB SAFETY ALERT",
+                title = "JOB SAFETY REMINDER",
                 titleColor = "#1976D2",
                 strokeColor = "#1976D2",
                 bgColor = "#E3F2FD",
-                message = "You are searching for online jobs or tasks.\n\n⚠️ NEVER pay a 'registration fee', 'security deposit', or any sort of fee for a job. If asked for registration money etc, then it's a scam.",
+                message = "Be cautious of online jobs or tasks asking for registration fees or deposits—upfront payment requests are a strong red flag for job scams.",
                 onDismiss = onDismiss
             )
         }
@@ -228,11 +249,11 @@ object OverlayUtils {
         showSystemOverlay(context) { ctx, onDismiss ->
             AlertCardBuilder.buildSimpleAlertCard(
                 ctx,
-                title = "📈 TRADING SAFETY ALERT",
+                title = "TRADING SAFETY REMINDER",
                 titleColor = "#2E7D32",
                 strokeColor = "#2E7D32",
                 bgColor = "#E8F5E9",
-                message = "You are searching for trading or cryptocurrency.\n\n⚠️ NEVER join 'VIP Trading Groups' on Telegram or WhatsApp for stock tips.\n\n⚠️ Beware of platforms promising guaranteed high returns or risk-free profits. If it sounds too good to be true, it's a scam designed to steal your investments.",
+                message = "Be cautious of VIP trading groups promising guaranteed returns. Always verify brokers with SEBI before depositing money.",
                 onDismiss = onDismiss
             )
         }
@@ -242,11 +263,11 @@ object OverlayUtils {
         showSystemOverlay(context) { ctx, onDismiss ->
             AlertCardBuilder.buildSimpleAlertCard(
                 ctx,
-                title = "⚠️ BOOKING SCAM WARNING",
+                title = "UNVERIFIED BOOKING WARNING",
                 titleColor = "#E65100",
                 strokeColor = "#F57C00",
                 bgColor = "#FFF3E0",
-                message = "You are discussing a booking or service with '$chatTitle' and they have requested payment.\n\nScammers frequently create fake listings and websites to steal advance payments via QR codes.\n\nNEVER scan a QR code for an unverified booking or service.",
+                message = "This chat with '$chatTitle' looks like an unverified booking request. Avoid scanning QR codes or paying advance fees over chat without verifying the service first.",
                 onDismiss = onDismiss
             )
         }

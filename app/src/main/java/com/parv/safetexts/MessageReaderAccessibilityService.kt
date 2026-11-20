@@ -2176,7 +2176,7 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 if (!android.provider.Settings.canDrawOverlays(this)) {
                     android.widget.Toast.makeText(
                         this,
-                        "🚨 DANGEROUS SCAM WEBSITE (${result.score}/100)!\n$domain\n${result.reasons.firstOrNull() ?: ""}",
+                        "⚠️ UNVERIFIED WEBSITE (${result.score}/100)!\n$domain\n${result.reasons.firstOrNull() ?: ""}",
                         android.widget.Toast.LENGTH_LONG
                     ).show()
                 } else {
