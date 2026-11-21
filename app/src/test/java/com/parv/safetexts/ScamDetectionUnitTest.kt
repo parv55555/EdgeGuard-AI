@@ -251,9 +251,64 @@ class ScamDetectionUnitTest {
         assertEquals("SUSPICIOUS WEBSITE WARNING", webTitle)
         assertTrue(webBody.contains("Double-check the web address"))
 
+        // Case 1: Unknown website with payment page
+        val (paymentTitle, paymentBody) = AlertCardBuilder.resolveScamCopy("Unknown merchant checkout", isFakeWebsite = true, fraudCategory = "PAYMENT")
+        assertEquals("UNVERIFIED PAYMENT PAGE", paymentTitle)
+        assertTrue(paymentBody.contains("Check for the originality of the website before making any payment"))
+
+        // Case 2: Similar domain to big company (Fake Website)
+        val (fakeTitle, fakeBody) = AlertCardBuilder.resolveScamCopy("Impersonating big company", isFakeWebsite = true, fraudCategory = "BRAND_IMPERSONATION")
+        assertEquals("FAKE WEBSITE WARNING", fakeTitle)
+        assertTrue(fakeBody.contains("similar to a known company and looks like a fake website"))
+
         // #14 General AI
         val (generalTitle, generalBody) = AlertCardBuilder.resolveScamCopy("Random suspicious message")
         assertEquals("POTENTIAL SCAM ALERT", generalTitle)
         assertTrue(generalBody.contains("matches patterns commonly seen in scams"))
+    }
+
+    @Test
+    fun testWebsiteDetectionTwoCases() {
+        // Case 1: Unknown website with payment page
+        val unknownPaymentUrl = "https://freshstore99.in/checkout"
+        val paymentScreenText = "Order Summary: 1 Item. Total: ₹ 899. Proceed to pay with card or enter UPI ID."
+        val paymentScan = FraudDetectionEngine.analyze(unknownPaymentUrl, paymentScreenText)
+        assertEquals("PAYMENT", paymentScan.fraudCategory)
+        assertTrue("Payment page must score >= 50", paymentScan.score >= 50)
+        assertTrue(paymentScan.reasons.any { it.contains("Check for the originality of the website before making any payment") })
+
+        val (c1Title, c1Body) = AlertCardBuilder.resolveScamCopy(
+            paymentScan.reasons.joinToString("\n"),
+            isFakeWebsite = true,
+            fraudCategory = paymentScan.fraudCategory
+        )
+        assertEquals("UNVERIFIED PAYMENT PAGE", c1Title)
+        assertTrue(c1Body.contains("Check for the originality of the website before making any payment"))
+
+        // Case 2: Similar domain name as a big company (Fake Website)
+        val fakeBrandUrls = listOf(
+            "https://flipkartsale.xyz/deals",
+            "https://amazonsale.shop/products",
+            "https://priyaflipkart.in/offer"
+        )
+        for (fakeUrl in fakeBrandUrls) {
+            val brandScan = FraudDetectionEngine.analyze(fakeUrl, "Mega discounts on top brands")
+            assertEquals("BRAND_IMPERSONATION", brandScan.fraudCategory)
+            assertTrue("Fake brand website must score >= 50", brandScan.score >= 50)
+
+            val (c2Title, c2Body) = AlertCardBuilder.resolveScamCopy(
+                brandScan.reasons.joinToString("\n"),
+                isFakeWebsite = true,
+                fraudCategory = brandScan.fraudCategory
+            )
+            assertEquals("FAKE WEBSITE WARNING", c2Title)
+            assertTrue(c2Body.contains("similar to a known company and looks like a fake website"))
+        }
+
+        // Verified authentic payment gateway must NOT be flagged
+        val razorpayScan = FraudDetectionEngine.analyze("https://api.razorpay.com/v1/checkout.js", "Payment processing gateway")
+        assertEquals(0, razorpayScan.score)
+        val cashfreeScan = FraudDetectionEngine.analyze("https://cashfree.com/pay", "Secure payment checkout")
+        assertEquals(0, cashfreeScan.score)
     }
 }

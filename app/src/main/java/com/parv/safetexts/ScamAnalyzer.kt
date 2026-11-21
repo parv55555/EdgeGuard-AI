@@ -184,6 +184,7 @@ class ScamAnalyzer private constructor(private val context: Context) {
                     val alertTag = when (scan.fraudCategory) {
                         "GOVERNMENT" -> "Fake Govt WebShield"
                         "BANK" -> "Bank Phishing WebShield"
+                        "PAYMENT" -> "Payment WebShield"
                         else -> "EdgeGuard WebShield"
                     }
                     return Pair(alertTag, (scan.score / 100f).coerceAtLeast(0.95f))
@@ -363,14 +364,18 @@ class ScamAnalyzer private constructor(private val context: Context) {
         }
 
         val isWebFraud = isBrowserSpam || message.analysisResult.contains("WebShield") || message.sender.contains("WebShield")
+        val highestUrlScan = if (isWebFraud) FraudDetectionEngine.findHighestRiskUrlInText(message.content) else null
         val category = when {
+            highestUrlScan != null && highestUrlScan.second.fraudCategory.isNotEmpty() && highestUrlScan.second.fraudCategory != "GENERIC" ->
+                highestUrlScan.second.fraudCategory
             message.analysisResult.contains("Govt") || message.sender.contains("Govt") -> "GOVERNMENT"
             message.analysisResult.contains("Bank") || message.sender.contains("Bank") -> "BANK"
+            message.analysisResult.contains("Payment") || message.sender.contains("Payment") -> "PAYMENT"
+            message.analysisResult.contains("Fake Website") || message.sender.contains("Fake Website") -> "BRAND_IMPERSONATION"
             else -> "GENERIC"
         }
         val domainFromContent = if (isWebFraud) {
-            (FraudDetectionEngine.findHighestRiskUrlInText(message.content)?.first
-                ?: FraudDetectionEngine.findValidUrlInText(message.content))
+            (highestUrlScan?.first ?: FraudDetectionEngine.findValidUrlInText(message.content))
                 ?.let { FraudDetectionEngine.extractDomain(it) }
         } else null
 

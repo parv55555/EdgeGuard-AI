@@ -2143,11 +2143,15 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             val alertSender = when (result.fraudCategory) {
                 "GOVERNMENT" -> "Fake Govt WebShield"
                 "BANK" -> "Bank Phishing WebShield"
+                "PAYMENT" -> "Payment WebShield"
+                "BRAND_IMPERSONATION" -> "Fake Website WebShield"
                 else -> "EdgeGuard WebShield"
             }
             val alertHeader = when (result.fraudCategory) {
                 "GOVERNMENT" -> "🚨 Fake Government Portal: $domain (Risk Score: ${result.score}/100)\n"
                 "BANK" -> "🚨 Fake Bank / Phishing: $domain (Risk Score: ${result.score}/100)\n"
+                "PAYMENT" -> "⚠️ Unverified Payment Page: $domain (Risk Score: ${result.score}/100)\n"
+                "BRAND_IMPERSONATION" -> "🚨 Fake Website: $domain (Risk Score: ${result.score}/100)\n"
                 else -> "🚨 Fake Website: $domain (Risk Score: ${result.score}/100)\n"
             }
             val alert = MessageEntity(
@@ -2174,9 +2178,14 @@ class MessageReaderAccessibilityService : AccessibilityService() {
 
             Handler(Looper.getMainLooper()).post {
                 if (!android.provider.Settings.canDrawOverlays(this)) {
+                    val toastText = when (result.fraudCategory) {
+                        "PAYMENT" -> "⚠️ UNVERIFIED PAYMENT PAGE (${result.score}/100)!\n$domain\nCheck for the originality of the website before making any payment."
+                        "BRAND_IMPERSONATION" -> "🚨 FAKE WEBSITE WARNING (${result.score}/100)!\n$domain\nThis website has a domain name similar to a known company."
+                        else -> "⚠️ UNVERIFIED WEBSITE (${result.score}/100)!\n$domain\n${result.reasons.firstOrNull() ?: ""}"
+                    }
                     android.widget.Toast.makeText(
                         this,
-                        "⚠️ UNVERIFIED WEBSITE (${result.score}/100)!\n$domain\n${result.reasons.firstOrNull() ?: ""}",
+                        toastText,
                         android.widget.Toast.LENGTH_LONG
                     ).show()
                 } else {

@@ -223,6 +223,12 @@ object FraudDetectionEngine {
         "policybazaar.com", "digit.com", "godigit.com"
     )
 
+    val VERIFIED_PAYMENT_GATEWAYS = setOf(
+        "razorpay.com", "rzp.io", "cashfree.com", "payu.in", "payumoney.com",
+        "ccavenue.com", "stripe.com", "billdesk.com", "billdesk.io",
+        "instamojo.com", "cred.club", "juspay.in", "easebuzz.in"
+    )
+
     // ========================================================================
     // 3. SOVEREIGN GOVERNMENT IDENTITY & SCHEME KEYWORDS
     // ========================================================================
@@ -430,15 +436,17 @@ object FraudDetectionEngine {
         }
 
         // ====================================================================
-        // WHITELIST CHECK 4: Verified Trusted Platforms & Govt Utility Portals
+        // WHITELIST CHECK 4: Verified Trusted Platforms, Aggregators & Gateways
         // ====================================================================
         val isTrustedPlatform = VERIFIED_TRUSTED_PLATFORMS.any { tp ->
             cleanDomain == tp || cleanDomain.endsWith(".$tp")
         } || VERIFIED_GOVT_UTILITY_AGGREGATORS.any { util ->
             cleanDomain == util || cleanDomain.endsWith(".$util")
+        } || VERIFIED_PAYMENT_GATEWAYS.any { pg ->
+            cleanDomain == pg || cleanDomain.endsWith(".$pg")
         }
         if (isTrustedPlatform) {
-            return ScanResult(0, listOf("Verified trusted platform ($cleanDomain)"))
+            return ScanResult(0, listOf("Verified trusted platform or payment gateway ($cleanDomain)"))
         }
 
         // ====================================================================
@@ -557,8 +565,7 @@ object FraudDetectionEngine {
 
         fun categoryForBrand(brandRoot: String): String = when (brandRoot) {
             in BANK_BRAND_ROOTS -> "BANK"
-            in COMMERCE_IMPERSONATION_BRAND_ROOTS -> "ECOMMERCE"
-            else -> detectedCategory
+            else -> "BRAND_IMPERSONATION"
         }
 
         var hostBrandMatched = false
@@ -705,7 +712,7 @@ object FraudDetectionEngine {
                         val mismatchScore = if (hasTextCommerceSignal || hasShoppingHostWord || hasImpersonationSyntax) 55 else 30
                         score += mismatchScore
                         reasons.add("Brand mismatch: Content references '$brandKeyword' on unauthorized host '$cleanDomain'")
-                        if (detectedCategory == "GENERIC") detectedCategory = "ECOMMERCE"
+                        if (detectedCategory == "GENERIC") detectedCategory = "BRAND_IMPERSONATION"
                         brandMismatchAdded = true
                         break
                     }
@@ -735,6 +742,43 @@ object FraudDetectionEngine {
             if (hasDirectUpi) {
                 score += 40
                 reasons.add("Direct unverified UPI payment link detected on unauthorized shopping portal")
+            }
+        }
+
+        // ====================================================================
+        // CHECK 9: Unverified Website Payment Page Advisory (Case 1)
+        // ====================================================================
+        val lowerPath = parsed.pathAndQuery.lowercase(Locale.ROOT)
+        val hasPaymentInPath = lowerPath.contains("/pay") || lowerPath.contains("/payment") ||
+                lowerPath.contains("/checkout") || lowerPath.contains("/billing") ||
+                lowerPath.contains("/order-pay") || lowerPath.contains("payment_id") ||
+                lowerPath.contains("payment_intent") || lowerPath.contains("checkout_session") ||
+                lowerPath.contains("pay_now") || lowerPath.contains("payment-gateway") ||
+                lowerPath.contains("upi-pay") || lowerPath.contains("make-payment")
+
+        val hasPaymentKeywordInText = lowerText.contains("make payment") ||
+                lowerText.contains("proceed to pay") ||
+                lowerText.contains("pay now") ||
+                lowerText.contains("enter upi id") ||
+                lowerText.contains("upi id / vpa") ||
+                lowerText.contains("card number") ||
+                lowerText.contains("card details") ||
+                lowerText.contains("cvv") ||
+                lowerText.contains("expiry date") ||
+                lowerText.contains("select payment method") ||
+                lowerText.contains("payment options") ||
+                lowerText.contains("billing address") ||
+                lowerText.contains("order total") ||
+                lowerText.contains("complete order") ||
+                lowerText.contains("place order") ||
+                lowerText.contains("pay with upi") ||
+                lowerText.contains("pay with card")
+
+        if (hasPaymentInPath || hasPaymentKeywordInText) {
+            if (detectedCategory != "BRAND_IMPERSONATION" && detectedCategory != "BANK" && detectedCategory != "GOVERNMENT") {
+                score = maxOf(score, 60)
+                reasons.add("Check for the originality of the website before making any payment. Unverified online payment page detected on '$cleanDomain'.")
+                detectedCategory = "PAYMENT"
             }
         }
 

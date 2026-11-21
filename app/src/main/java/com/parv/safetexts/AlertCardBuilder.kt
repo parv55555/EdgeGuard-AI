@@ -42,7 +42,17 @@ object AlertCardBuilder {
                 "UNVERIFIED BANKING PAGE",
                 "This website does not match an official bank domain and looks like a phishing page. Do NOT enter your NetBanking ID, password, MPIN, or OTP here."
             )
-            // #13 Brand Impersonation & Spoofed URLs / Browser spam
+            // Case 1: Unknown website with payment page
+            isFakeWebsite && (fraudCategory == "PAYMENT" || lower.contains("payment page") || lower.contains("originality of the website")) -> Pair(
+                "UNVERIFIED PAYMENT PAGE",
+                "Check for the originality of the website before making any payment. Verify that this store or payment gateway is genuine before entering card or UPI details."
+            )
+            // Case 2: Big company name / lookalike domain (Fake Website)
+            isFakeWebsite && (fraudCategory == "BRAND_IMPERSONATION" || fraudCategory == "ECOMMERCE" || lower.contains("brand impersonation") || lower.contains("brand hijacking") || lower.contains("typosquatting") || lower.contains("fake website")) -> Pair(
+                "FAKE WEBSITE WARNING",
+                "This website has a domain name similar to a known company and looks like a fake website. Double-check the web address before entering passwords, phone numbers, or card details."
+            )
+            // #13 Brand Impersonation & Spoofed URLs / Browser spam fallback
             isFakeWebsite || isBrowserSpam -> Pair(
                 "SUSPICIOUS WEBSITE WARNING",
                 "This link looks suspicious and may be impersonating a known brand. Double-check the web address before entering passwords, phone numbers, or card details."
