@@ -79,6 +79,10 @@ android {
         }
     }
 
+    androidResources {
+        noCompress += listOf("tflite", "A0908I", "model", "ftz")
+    }
+
 }
 
 dependencies {

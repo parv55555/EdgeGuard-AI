@@ -88,7 +88,17 @@ class TFLiteScamClassifier(private val context: Context) {
 
     private fun loadModel() {
         try {
-            val fileDescriptor = context.assets.openFd("model.tflite")
+            val candidateFiles = listOf("A0908I.tflite", "A0908I", "model.tflite")
+            var resolvedFile = "A0908I.tflite"
+            val assetList = try { context.assets.list("")?.toSet() ?: emptySet() } catch (_: Exception) { emptySet() }
+            for (candidate in candidateFiles) {
+                if (assetList.contains(candidate)) {
+                    resolvedFile = candidate
+                    break
+                }
+            }
+
+            val fileDescriptor = context.assets.openFd(resolvedFile)
             val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
             val fileChannel = inputStream.channel
             val startOffset = fileDescriptor.startOffset
@@ -101,7 +111,7 @@ class TFLiteScamClassifier(private val context: Context) {
                 setUseXNNPACK(true)
             }
             interpreter = Interpreter(buffer, options)
-            Log.d("TFLiteScamClassifier", "Model loaded successfully with $numCores threads and XNNPACK acceleration")
+            Log.d("TFLiteScamClassifier", "SLM model '$resolvedFile' loaded successfully with $numCores threads and XNNPACK acceleration")
         } catch (e: Exception) {
             Log.e("TFLiteScamClassifier", "Error loading model: ${e.message}", e)
         }
