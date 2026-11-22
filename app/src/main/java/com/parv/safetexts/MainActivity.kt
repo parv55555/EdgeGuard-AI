@@ -44,6 +44,9 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -702,64 +705,100 @@ fun HomeScreen(navController: NavController) {
                 var selectedLanguage by remember {
                     mutableStateOf(AlertTranslationManager.getSelectedLanguage(context))
                 }
+                var isLanguageDropdownExpanded by remember { mutableStateOf(false) }
 
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { isLanguageDropdownExpanded = true },
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp, 
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        )
+                    ) {
                         Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth()
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(
-                                text = "Alert Language / चेतावनी भाषा",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "${selectedLanguage.nativeName} (${selectedLanguage.displayName})",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            items(AlertLanguage.entries) { lang ->
-                                val isSelected = selectedLanguage == lang
-                                FilterChip(
-                                    selected = isSelected,
-                                    onClick = {
-                                        selectedLanguage = lang
-                                        AlertTranslationManager.setSelectedLanguage(context, lang)
-                                    },
-                                    label = {
-                                        Text(
-                                            text = lang.nativeName,
-                                            fontSize = 12.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                        )
-                                    },
-                                    shape = RoundedCornerShape(10.dp),
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-                                        containerColor = MaterialTheme.colorScheme.surface,
-                                        labelColor = MaterialTheme.colorScheme.onSurface
-                                    )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Alert Language / चेतावनी भाषा",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "${selectedLanguage.nativeName} (${selectedLanguage.displayName})",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
+                            Icon(
+                                imageVector = if (isLanguageDropdownExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Select Alert Language",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+
+                    DropdownMenu(
+                        expanded = isLanguageDropdownExpanded,
+                        onDismissRequest = { isLanguageDropdownExpanded = false },
+                        modifier = Modifier
+                            .fillMaxWidth(0.88f)
+                            .background(
+                                color = MaterialTheme.colorScheme.surface,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                    ) {
+                        AlertLanguage.entries.forEach { lang ->
+                            val isSelected = selectedLanguage == lang
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column {
+                                            Text(
+                                                text = lang.nativeName,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                                fontSize = 15.sp,
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = lang.displayName,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        if (isSelected) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "Selected",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    selectedLanguage = lang
+                                    AlertTranslationManager.setSelectedLanguage(context, lang)
+                                    isLanguageDropdownExpanded = false
+                                }
+                            )
                         }
                     }
                 }
