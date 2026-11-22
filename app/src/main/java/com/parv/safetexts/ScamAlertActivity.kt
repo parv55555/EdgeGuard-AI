@@ -147,6 +147,7 @@ class ScamAlertActivity : Activity() {
                 strokeColor = "#1976D2",
                 bgColor = "#E3F2FD",
                 message = "Be cautious of booking agents asking for advance payments via WhatsApp QR codes or personal UPI IDs. Verify listings and book only on official apps or websites.",
+                typeKey = "BOOKING",
                 onDismiss = { finish() }
             )
             TYPE_HELPLINE -> AlertCardBuilder.buildSimpleAlertCard(
@@ -156,6 +157,7 @@ class ScamAlertActivity : Activity() {
                 strokeColor = "#F57C00",
                 bgColor = "#FFF3E0",
                 message = "Helpline numbers found through web search are sometimes fake. Check the official app or website directly, and never share OTPs or install remote-access apps.",
+                typeKey = "HELPLINE",
                 onDismiss = { finish() }
             )
             TYPE_LOAN -> AlertCardBuilder.buildSimpleAlertCard(
@@ -165,6 +167,7 @@ class ScamAlertActivity : Activity() {
                 strokeColor = "#F57C00",
                 bgColor = "#FFF3E0",
                 message = "Be cautious of instant-loan offers asking for upfront “processing fees” or APK downloads via WhatsApp. Check that the lender is RBI-registered before applying.",
+                typeKey = "LOAN",
                 onDismiss = { finish() }
             )
             TYPE_JOB -> AlertCardBuilder.buildSimpleAlertCard(
@@ -174,6 +177,7 @@ class ScamAlertActivity : Activity() {
                 strokeColor = "#1976D2",
                 bgColor = "#E3F2FD",
                 message = "Be cautious of online jobs or tasks asking for registration fees or deposits—upfront payment requests are a strong red flag for job scams.",
+                typeKey = "JOB",
                 onDismiss = { finish() }
             )
             TYPE_TRADING -> AlertCardBuilder.buildSimpleAlertCard(
@@ -183,6 +187,7 @@ class ScamAlertActivity : Activity() {
                 strokeColor = "#2E7D32",
                 bgColor = "#E8F5E9",
                 message = "Be cautious of VIP trading groups promising guaranteed returns. Always verify brokers with SEBI before depositing money.",
+                typeKey = "TRADING",
                 onDismiss = { finish() }
             )
             TYPE_FAKE_BOOKING -> {
@@ -194,6 +199,7 @@ class ScamAlertActivity : Activity() {
                     strokeColor = "#F57C00",
                     bgColor = "#FFF3E0",
                     message = "This chat with '$chatTitle' looks like an unverified booking request. Avoid scanning QR codes or paying advance fees over chat without verifying the service first.",
+                    typeKey = "CHAT_BOOKING",
                     onDismiss = { finish() }
                 )
             }

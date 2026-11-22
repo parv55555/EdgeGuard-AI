@@ -28,112 +28,58 @@ object AlertCardBuilder {
         isFakeCredit: Boolean = false,
         isBrowserSpam: Boolean = false,
         isFakeWebsite: Boolean = false,
-        fraudCategory: String? = null
+        fraudCategory: String? = null,
+        context: Context? = null,
+        language: AlertLanguage? = null
     ): Pair<String, String> {
+        val lang = language ?: (context?.let { AlertTranslationManager.getSelectedLanguage(it) } ?: AlertLanguage.ENGLISH)
         val lower = content.lowercase()
-        return when {
+        val scamType = when {
             // #11 Counterfeit Govt Portal WebShield
-            isFakeWebsite && fraudCategory == "GOVERNMENT" -> Pair(
-                "UNVERIFIED GOVT WEBSITE",
-                "This page looks like an unofficial government portal. Official Indian government sites typically end in .gov.in or .nic.in. Avoid entering personal details or paying here."
-            )
+            isFakeWebsite && fraudCategory == "GOVERNMENT" -> AlertTranslationManager.ScamType.GOVT_WEBSITE
             // #12 Counterfeit Bank WebShield
-            isFakeWebsite && fraudCategory == "BANK" -> Pair(
-                "UNVERIFIED BANKING PAGE",
-                "This website does not match an official bank domain and looks like a phishing page. Do NOT enter your NetBanking ID, password, MPIN, or OTP here."
-            )
+            isFakeWebsite && fraudCategory == "BANK" -> AlertTranslationManager.ScamType.BANK_PAGE
             // Case 1: Unknown website with payment page
-            isFakeWebsite && (fraudCategory == "PAYMENT" || lower.contains("payment page") || lower.contains("originality of the website")) -> Pair(
-                "UNVERIFIED PAYMENT PAGE",
-                "Check for the originality of the website before making any payment. Verify that this store or payment gateway is genuine before entering card or UPI details."
-            )
+            isFakeWebsite && (fraudCategory == "PAYMENT" || lower.contains("payment page") || lower.contains("originality of the website")) -> AlertTranslationManager.ScamType.UNVERIFIED_PAYMENT
             // Case 2: Big company name / lookalike domain (Fake Website)
-            isFakeWebsite && (fraudCategory == "BRAND_IMPERSONATION" || fraudCategory == "ECOMMERCE" || lower.contains("brand impersonation") || lower.contains("brand hijacking") || lower.contains("typosquatting") || lower.contains("fake website")) -> Pair(
-                "FAKE WEBSITE WARNING",
-                "This website has a domain name similar to a known company and looks like a fake website. Double-check the web address before entering passwords, phone numbers, or card details."
-            )
+            isFakeWebsite && (fraudCategory == "BRAND_IMPERSONATION" || fraudCategory == "ECOMMERCE" || lower.contains("brand impersonation") || lower.contains("brand hijacking") || lower.contains("typosquatting") || lower.contains("fake website")) -> AlertTranslationManager.ScamType.FAKE_WEBSITE
             // #13 Brand Impersonation & Spoofed URLs / Browser spam fallback
-            isFakeWebsite || isBrowserSpam -> Pair(
-                "SUSPICIOUS WEBSITE WARNING",
-                "This link looks suspicious and may be impersonating a known brand. Double-check the web address before entering passwords, phone numbers, or card details."
-            )
+            isFakeWebsite || isBrowserSpam -> AlertTranslationManager.ScamType.SUSPICIOUS_WEBSITE
             // #10 Fake Transaction / Reverse-Credit
-            isFakeCredit -> Pair(
-                "UNVERIFIED CREDIT MESSAGE",
-                "This looks like a fake credit alert. Do NOT transfer money back based on an SMS alone—open your official bank app to check your real balance first."
-            )
+            isFakeCredit -> AlertTranslationManager.ScamType.FAKE_CREDIT
             // #5 Fake Traffic Challan APK or other APK files
-            isApk -> {
-                if (lower.contains("challan") || lower.contains("echallan") || lower.contains("traffic") ||
-                    lower.contains("parivahan") || lower.contains("fine") || lower.contains("court")) {
-                    Pair(
-                        "SUSPICIOUS APK FILE",
-                        "This looks like an unverified challan APK file. Installing unknown APKs can put your OTPs and bank accounts at risk. Check challans only on the official Parivahan portal."
-                    )
-                } else {
-                    Pair(
-                        "SUSPICIOUS APK FILE",
-                        "This looks like an unverified challan APK file. Installing unknown APKs can put your OTPs and bank accounts at risk. Check challans only on the official Parivahan portal."
-                    )
-                }
-            }
+            isApk -> AlertTranslationManager.ScamType.APK_CHALLAN
             // #2 Electricity / Utility Disconnection
             (lower.contains("electricity") || lower.contains("bijli") || lower.contains("power")) &&
-            (lower.contains("disconnect") || lower.contains("cut") || lower.contains("bill") || lower.contains("tonight") || lower.contains("9:30") || lower.contains("unpaid")) -> Pair(
-                "POSSIBLE UTILITY SCAM",
-                "This looks like a fake power-disconnection threat. Utility providers rarely demand urgent payment to personal numbers. Check your official electricity app before paying."
-            )
+            (lower.contains("disconnect") || lower.contains("cut") || lower.contains("bill") || lower.contains("tonight") || lower.contains("9:30") || lower.contains("unpaid")) -> AlertTranslationManager.ScamType.UTILITY_SCAM
             // #3 Fake Lottery / KBC / Prize Winner
             (lower.contains("kbc") || lower.contains("lottery") || lower.contains("congratulations") || lower.contains("prize") || lower.contains("winner")) &&
-            (lower.contains("lakh") || lower.contains("crore") || lower.contains("won") || lower.contains("claim") || lower.contains("lucky")) -> Pair(
-                "SUSPICIOUS PRIZE MESSAGE",
-                "This message looks like a lottery or prize scam. Be cautious of any prize claim asking for processing fees, GST, or personal details."
-            )
+            (lower.contains("lakh") || lower.contains("crore") || lower.contains("won") || lower.contains("claim") || lower.contains("lucky")) -> AlertTranslationManager.ScamType.LOTTERY_PRIZE
             // #4 Fake Job / YouTube Task
             (lower.contains("part time") || lower.contains("daily income") || lower.contains("youtube") || lower.contains("like and subscribe") || lower.contains("telegram")) &&
-            (lower.contains("per day") || lower.contains("earn") || lower.contains("salary") || lower.contains("daily") || lower.contains("rs.") || lower.contains("inr") || lower.contains("work from home")) -> Pair(
-                "SUSPICIOUS JOB OFFER",
-                "This looks like a part-time task or job scam. Be wary of easy daily-income offers—especially any that ask for upfront deposits to unlock earnings."
-            )
+            (lower.contains("per day") || lower.contains("earn") || lower.contains("salary") || lower.contains("daily") || lower.contains("rs.") || lower.contains("inr") || lower.contains("work from home")) -> AlertTranslationManager.ScamType.JOB_OFFER
             // #6 Sextortion / Digital Arrest Text Threats
             (lower.contains("cbi") || lower.contains("narcotics") || lower.contains("cyber crime") || lower.contains("police") || lower.contains("digital arrest")) &&
-            (lower.contains("warrant") || lower.contains("arrest") || lower.contains("illegal") || lower.contains("court") || lower.contains("summon") || lower.contains("case file")) -> Pair(
-                "POSSIBLE IMPERSONATION SCAM",
-                "This message looks like a fake legal or “digital arrest” threat. Police and CBI do not serve arrest warrants over SMS or WhatsApp. Do not panic or transfer money."
-            )
+            (lower.contains("warrant") || lower.contains("arrest") || lower.contains("illegal") || lower.contains("court") || lower.contains("summon") || lower.contains("case file")) -> AlertTranslationManager.ScamType.LEGAL_THREAT
             // #7 India Post / Courier Address Update
             (lower.contains("india post") || lower.contains("post office") || lower.contains("courier") || lower.contains("parcel") || lower.contains("shipment") || lower.contains("package") || lower.contains("delivery")) &&
-            (lower.contains("address") || lower.contains("failed") || lower.contains("suspend") || lower.contains("update") || lower.contains("reschedule") || lower.contains("undelivered")) -> Pair(
-                "SUSPICIOUS DELIVERY LINK",
-                "This looks like a courier or address-update scam. Avoid clicking unknown links or paying small redelivery fees by card. Track parcels only on the official courier website."
-            )
+            (lower.contains("address") || lower.contains("failed") || lower.contains("suspend") || lower.contains("update") || lower.contains("reschedule") || lower.contains("undelivered")) -> AlertTranslationManager.ScamType.COURIER_DELIVERY
             // #8 Remote Access / OTP Coercion
             (lower.contains("anydesk") || lower.contains("teamviewer") || lower.contains("quicksupport") || lower.contains("rustdesk")) ||
             ((lower.contains("otp") || lower.contains("one time password") || lower.contains("verification code")) &&
              (lower.contains("share") || lower.contains("forward") || lower.contains("send to") || lower.contains("tell me")) &&
-             (!lower.contains("do not share") && !lower.contains("never share") && !lower.contains("don't share") && !lower.contains("dont share"))) -> Pair(
-                "OTP & REMOTE ACCESS WARNING",
-                "This message looks like an attempt to ask for your OTP or remote access. Bank and police officials never ask for OTPs or screen-sharing apps—do not share them."
-            )
+             (!lower.contains("do not share") && !lower.contains("never share") && !lower.contains("don't share") && !lower.contains("dont share"))) -> AlertTranslationManager.ScamType.OTP_REMOTE_ACCESS
             // #9 Pre-Approved Loan / Cashback
             (lower.contains("loan") || lower.contains("refund") || lower.contains("credit card limit") || lower.contains("cashback")) &&
             (lower.contains("pre-approved") || lower.contains("approved") || lower.contains("credited") || lower.contains("claim now") || lower.contains("apply now")) &&
-            (lower.contains("link") || lower.contains("http") || lower.contains("bit.ly") || lower.contains("click")) -> Pair(
-                "SUSPICIOUS FINANCIAL OFFER",
-                "This looks like a phishing link disguised as a loan, refund, or cashback offer. Avoid clicking shortened links and verify offers directly in your official app."
-            )
+            (lower.contains("link") || lower.contains("http") || lower.contains("bit.ly") || lower.contains("click")) -> AlertTranslationManager.ScamType.FINANCIAL_OFFER
             // #1 Bank / KYC / PAN / SIM Block
             (lower.contains("kyc") || lower.contains("pan card") || lower.contains("pancard") || lower.contains("aadhaar") || lower.contains("account") || lower.contains("debit card") || lower.contains("sim card") || lower.contains("sim block") || lower.contains("yono") || lower.contains("sbi")) &&
-            (lower.contains("block") || lower.contains("suspend") || lower.contains("update immediately") || lower.contains("deactivate") || lower.contains("expire") || lower.contains("click here") || lower.contains("update your")) -> Pair(
-                "POTENTIAL SCAM ALERT",
-                "This message looks like a KYC or account-block scam. Do NOT transfer money, share OTPs, or click links. Verify directly in your official bank or telecom app."
-            )
+            (lower.contains("block") || lower.contains("suspend") || lower.contains("update immediately") || lower.contains("deactivate") || lower.contains("expire") || lower.contains("click here") || lower.contains("update your")) -> AlertTranslationManager.ScamType.BANK_KYC_BLOCK
             // #14 General AI / TFLite Message Classifier
-            else -> Pair(
-                "POTENTIAL SCAM ALERT",
-                "This message matches patterns commonly seen in scams. Pause before acting—do not share OTPs, transfer money, or click links without verifying the sender."
-            )
+            else -> AlertTranslationManager.ScamType.GENERAL_SCAM
         }
+        return AlertTranslationManager.getScamCopy(scamType, lang)
     }
 
     fun buildScamCard(
@@ -149,13 +95,16 @@ object AlertCardBuilder {
         fraudCategory: String? = null,
         onDismiss: () -> Unit
     ): View {
+        val lang = AlertTranslationManager.getSelectedLanguage(context)
         val (cardTitle, cardBody) = resolveScamCopy(
             content = content,
             isApk = isApk,
             isFakeCredit = isFakeCredit,
             isBrowserSpam = isBrowserSpam,
             isFakeWebsite = isFakeWebsite,
-            fraudCategory = fraudCategory
+            fraudCategory = fraudCategory,
+            context = context,
+            language = lang
         )
 
         val cardLayout = LinearLayout(context).apply {
@@ -180,11 +129,7 @@ object AlertCardBuilder {
         cardLayout.addView(titleView)
 
         val senderView = TextView(context).apply {
-            text = when {
-                isApk -> "Source: $sender"
-                isBrowserSpam -> "Phishing notification from $sender"
-                else -> "From: $sender ($appName)"
-            }
+            text = AlertTranslationManager.getSourcePrefix(lang, isApk, isBrowserSpam, sender, appName)
             textSize = 13f
             setTextColor(Color.parseColor("#212121"))
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -209,7 +154,7 @@ object AlertCardBuilder {
         }
 
         val dismissBtn = Button(context).apply {
-            text = "DISMISS"
+            text = AlertTranslationManager.getDismissButton(lang)
             textSize = 13f
             setTextColor(Color.WHITE)
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -223,7 +168,7 @@ object AlertCardBuilder {
         }
 
         val notScamBtn = Button(context).apply {
-            text = "LOOKS SAFE"
+            text = AlertTranslationManager.getLooksSafeButton(lang)
             textSize = 13f
             setTextColor(Color.WHITE)
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -278,7 +223,7 @@ object AlertCardBuilder {
 
         if (isEligibleForTrust) {
             val trustBtn = Button(context).apply {
-                text = if (isFakeWebsite) "TRUST THIS SITE" else "TRUST THIS SENDER"
+                text = if (isFakeWebsite) AlertTranslationManager.getTrustSiteButton(lang) else AlertTranslationManager.getTrustSenderButton(lang)
                 setTextColor(Color.WHITE)
                 textSize = 12f
                 setTypeface(null, android.graphics.Typeface.BOLD)
@@ -301,27 +246,22 @@ object AlertCardBuilder {
                             val db = AppDatabase.getDatabase(context.applicationContext)
                             val msg = db.messageDao().getMessage(sender, content)
                             if (msg != null) {
-                                db.messageDao().updateMessage(msg.copy(analysisResult = "Trusted"))
+                                db.messageDao().updateMessage(msg.copy(analysisResult = "TRUSTED_SENDER"))
                             }
                             ScamAnalyzer.getInstance(context).markAsFalsePositive(sender, content)
-                            if (isFakeWebsite && !websiteDomain.isNullOrBlank()) {
-                                ScamAnalyzer.getInstance(context).markAsFalsePositive(websiteDomain, content)
-                            }
                         } catch (e: Exception) {
                             Log.e("AlertCardBuilder", "Failed marking trusted site/sender", e)
                         }
                     }
-                    android.os.Handler(android.os.Looper.getMainLooper()).post {
-                        val toastMsg = if (isFakeWebsite) {
-                            "Trusted '$targetToTrust'. This website will no longer trigger scam warnings."
-                        } else {
-                            "Trusted '$sender'. Messages from this number will no longer be scanned."
+                    try {
+                        val broadcastIntent = Intent("com.parv.safetexts.NOT_A_SCAM").apply {
+                            putExtra("message", content)
+                            putExtra("trusted_sender", targetToTrust)
+                            setPackage(context.packageName)
                         }
-                        android.widget.Toast.makeText(
-                            context.applicationContext,
-                            toastMsg,
-                            android.widget.Toast.LENGTH_LONG
-                        ).show()
+                        context.sendBroadcast(broadcastIntent)
+                    } catch (e: Exception) {
+                        Log.e("AlertCardBuilder", "Failed broadcasting trust sender", e)
                     }
                     onDismiss()
                 }
@@ -333,6 +273,9 @@ object AlertCardBuilder {
     }
 
     fun buildOtpCard(context: Context, onDismiss: () -> Unit): View {
+        val lang = AlertTranslationManager.getSelectedLanguage(context)
+        val (cardTitle, cardBody) = AlertTranslationManager.getOtpCardCopy(lang)
+
         val cardLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
@@ -345,7 +288,7 @@ object AlertCardBuilder {
         }
 
         val titleView = TextView(context).apply {
-            text = "OTP SAFETY REMINDER"
+            text = cardTitle
             textSize = 17f
             setTextColor(Color.parseColor("#E65100"))
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -354,7 +297,7 @@ object AlertCardBuilder {
         }
 
         val messageView = TextView(context).apply {
-            text = "A sensitive OTP arrived near an unknown call. Never share OTPs on a call or chat—bank and police officials will never ask for them."
+            text = cardBody
             textSize = 13.5f
             setTextColor(Color.parseColor("#374151"))
             gravity = Gravity.CENTER
@@ -362,7 +305,7 @@ object AlertCardBuilder {
         }
 
         val dismissBtn = Button(context).apply {
-            text = "I UNDERSTAND"
+            text = AlertTranslationManager.getUnderstandButton(lang)
             textSize = 13f
             setTextColor(Color.WHITE)
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -382,6 +325,9 @@ object AlertCardBuilder {
     }
 
     fun buildRatCard(context: Context, isSevere: Boolean, onDismiss: () -> Unit): View {
+        val lang = AlertTranslationManager.getSelectedLanguage(context)
+        val (cardTitle, cardBody) = AlertTranslationManager.getRatCardCopy(lang, isSevere)
+
         val cardLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
@@ -394,7 +340,7 @@ object AlertCardBuilder {
         }
 
         val titleView = TextView(context).apply {
-            text = if (isSevere) "HIGH-RISK SCREEN-SHARE ALERT" else "REMOTE ACCESS CAUTION"
+            text = cardTitle
             textSize = 17f
             setTextColor(if (isSevere) Color.parseColor("#B71C1C") else Color.parseColor("#E65100"))
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -403,10 +349,7 @@ object AlertCardBuilder {
         }
 
         val messageView = TextView(context).apply {
-            text = if (isSevere)
-                "A screen-sharing app was detected during or right after an unknown call. If a caller asked you to install this, do NOT grant permissions—it may expose your OTPs and bank balance."
-            else
-                "Screen-sharing apps let others view or control your phone. Only allow access if you personally know and trust the person."
+            text = cardBody
             textSize = 13.5f
             setTextColor(Color.parseColor("#374151"))
             gravity = Gravity.CENTER
@@ -414,7 +357,7 @@ object AlertCardBuilder {
         }
 
         val dismissBtn = Button(context).apply {
-            text = if (isSevere) "I UNDERSTAND THE RISK" else "GOT IT"
+            text = AlertTranslationManager.getUnderstandButton(lang)
             textSize = 13f
             setTextColor(Color.WHITE)
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -434,6 +377,9 @@ object AlertCardBuilder {
     }
 
     fun buildDigitalArrestCard(context: Context, onDismiss: () -> Unit): View {
+        val lang = AlertTranslationManager.getSelectedLanguage(context)
+        val (cardTitle, cardBody) = AlertTranslationManager.getDigitalArrestCopy(lang)
+
         val cardLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
@@ -446,7 +392,7 @@ object AlertCardBuilder {
         }
 
         val titleView = TextView(context).apply {
-            text = "POSSIBLE DIGITAL ARREST SCAM"
+            text = cardTitle
             textSize = 17f
             setTextColor(Color.parseColor("#B71C1C"))
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -455,7 +401,7 @@ object AlertCardBuilder {
         }
 
         val messageView = TextView(context).apply {
-            text = "Opening a banking app during a long unknown video call matches a common “Digital Arrest” scam pattern. Police and CBI never arrest people or ask for money over video call. Hang up and verify."
+            text = cardBody
             textSize = 13.5f
             setTextColor(Color.parseColor("#374151"))
             gravity = Gravity.CENTER
@@ -463,7 +409,7 @@ object AlertCardBuilder {
         }
 
         val dismissBtn = Button(context).apply {
-            text = "I UNDERSTAND (HANG UP)"
+            text = AlertTranslationManager.getHangUpButton(lang)
             textSize = 13f
             setTextColor(Color.WHITE)
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -483,6 +429,9 @@ object AlertCardBuilder {
     }
 
     fun buildSextortionCard(context: Context, onDismiss: () -> Unit): View {
+        val lang = AlertTranslationManager.getSelectedLanguage(context)
+        val (cardTitle, cardBody) = AlertTranslationManager.getSextortionCopy(lang)
+
         val cardLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
@@ -495,7 +444,7 @@ object AlertCardBuilder {
         }
 
         val titleView = TextView(context).apply {
-            text = "UNKNOWN VIDEO CALL CAUTION"
+            text = cardTitle
             textSize = 17f
             setTextColor(Color.parseColor("#B71C1C"))
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -504,7 +453,7 @@ object AlertCardBuilder {
         }
 
         val messageView = TextView(context).apply {
-            text = "Incoming video call from an unsaved number. Be cautious before showing your face—unknown video calls are sometimes used for blackmail or extortion."
+            text = cardBody
             textSize = 13.5f
             setTextColor(Color.parseColor("#374151"))
             gravity = Gravity.CENTER
@@ -512,7 +461,7 @@ object AlertCardBuilder {
         }
 
         val dismissBtn = Button(context).apply {
-            text = "DISMISS & HANG UP"
+            text = AlertTranslationManager.getHangUpButton(lang)
             textSize = 13f
             setTextColor(Color.WHITE)
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -532,6 +481,9 @@ object AlertCardBuilder {
     }
 
     fun buildPreInstallCard(context: Context, isSevere: Boolean, onDismiss: () -> Unit): View {
+        val lang = AlertTranslationManager.getSelectedLanguage(context)
+        val (cardTitle, cardBody) = AlertTranslationManager.getPreInstallCopy(lang, isSevere)
+
         val cardLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
@@ -544,7 +496,7 @@ object AlertCardBuilder {
         }
 
         val titleView = TextView(context).apply {
-            text = if (isSevere) "HIGH-RISK INSTALL WARNING" else "UNVERIFIED APP WARNING"
+            text = cardTitle
             textSize = 17f
             setTextColor(if (isSevere) Color.parseColor("#B71C1C") else Color.parseColor("#E65100"))
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -553,10 +505,7 @@ object AlertCardBuilder {
         }
 
         val messageView = TextView(context).apply {
-            text = if (isSevere)
-                "You are on an unknown call. Installing outside apps during a call is a common scam tactic that can put your device and bank balance at risk."
-            else
-                "This app is from outside Google Play. If an unknown caller asked you to install it, it could be an attempt to access your phone or banking apps."
+            text = cardBody
             textSize = 13.5f
             setTextColor(Color.parseColor("#374151"))
             gravity = Gravity.CENTER
@@ -570,7 +519,7 @@ object AlertCardBuilder {
         }
 
         val cancelBtn = Button(context).apply {
-            text = "CANCEL INSTALL"
+            text = AlertTranslationManager.getCancelInstallButton(lang)
             textSize = 13f
             setTextColor(Color.WHITE)
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -586,7 +535,7 @@ object AlertCardBuilder {
         }
 
         val bypassBtn = Button(context).apply {
-            text = "INSTALL ANYWAY"
+            text = AlertTranslationManager.getInstallAnywayButton(lang)
             textSize = 13f
             setTextColor(if (isSevere) Color.parseColor("#D50000") else Color.parseColor("#E65100"))
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -612,6 +561,9 @@ object AlertCardBuilder {
     }
 
     fun buildPostInstallCard(context: Context, maliciousPkg: String, onDismiss: () -> Unit): View {
+        val lang = AlertTranslationManager.getSelectedLanguage(context)
+        val (cardTitle, cardBody) = AlertTranslationManager.getPostInstallCopy(lang, maliciousPkg)
+
         val cardLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
@@ -624,7 +576,7 @@ object AlertCardBuilder {
         }
 
         val titleView = TextView(context).apply {
-            text = "UNVERIFIED APP INSTALLED"
+            text = cardTitle
             textSize = 17f
             setTextColor(Color.parseColor("#B71C1C"))
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -633,7 +585,7 @@ object AlertCardBuilder {
         }
 
         val messageView = TextView(context).apply {
-            text = "An app from an untrusted source ($maliciousPkg) was just installed. Unverified apps can put your OTPs and bank accounts at risk—uninstall it if you didn’t mean to install it."
+            text = cardBody
             textSize = 13.5f
             setTextColor(Color.parseColor("#374151"))
             gravity = Gravity.CENTER
@@ -641,7 +593,7 @@ object AlertCardBuilder {
         }
 
         val dismissBtn = Button(context).apply {
-            text = "I WILL UNINSTALL NOW"
+            text = AlertTranslationManager.getUninstallNowButton(lang)
             textSize = 13f
             setTextColor(Color.WHITE)
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -661,6 +613,9 @@ object AlertCardBuilder {
     }
 
     fun buildScamFunnelCard(context: Context, isDM: Boolean, onDismiss: () -> Unit): View {
+        val lang = AlertTranslationManager.getSelectedLanguage(context)
+        val (cardTitle, cardBody) = AlertTranslationManager.getScamFunnelCopy(lang, isDM)
+
         val cardLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
@@ -673,7 +628,7 @@ object AlertCardBuilder {
         }
 
         val titleView = TextView(context).apply {
-            text = if (isDM) "UNVERIFIED CHAT CAUTION" else "SUSPICIOUS GROUP INVITE"
+            text = cardTitle
             textSize = 17f
             setTextColor(Color.parseColor("#D32F2F"))
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -682,10 +637,7 @@ object AlertCardBuilder {
         }
 
         val messageView = TextView(context).apply {
-            text = if (isDM)
-                "Moving from an online ad to a private chat with an unsaved number is a common pattern in trading, task, or betting scams. Verify carefully before sending any money."
-            else
-                "Joining a group straight from an online ad is a common pattern in trading, task, and betting scams. Verify the source carefully before sending money or personal details."
+            text = cardBody
             textSize = 13.5f
             setTextColor(Color.parseColor("#374151"))
             gravity = Gravity.CENTER
@@ -693,7 +645,7 @@ object AlertCardBuilder {
         }
 
         val dismissBtn = Button(context).apply {
-            text = "I UNDERSTAND"
+            text = AlertTranslationManager.getUnderstandButton(lang)
             textSize = 13f
             setTextColor(Color.WHITE)
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -719,8 +671,16 @@ object AlertCardBuilder {
         strokeColor: String,
         bgColor: String,
         message: String,
+        typeKey: String? = null,
         onDismiss: () -> Unit
     ): View {
+        val lang = AlertTranslationManager.getSelectedLanguage(context)
+        val (resolvedTitle, resolvedMessage) = if (typeKey != null) {
+            AlertTranslationManager.getSearchAlertCopy(typeKey, lang)
+        } else {
+            Pair(title, message)
+        }
+
         val cardLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
@@ -733,7 +693,7 @@ object AlertCardBuilder {
         }
 
         val titleView = TextView(context).apply {
-            text = title
+            text = resolvedTitle
             textSize = 17f
             setTextColor(Color.parseColor(titleColor))
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -742,7 +702,7 @@ object AlertCardBuilder {
         }
 
         val messageView = TextView(context).apply {
-            text = message
+            text = resolvedMessage
             textSize = 13.5f
             setTextColor(Color.parseColor("#374151"))
             gravity = Gravity.CENTER
@@ -750,7 +710,7 @@ object AlertCardBuilder {
         }
 
         val dismissBtn = Button(context).apply {
-            text = "I UNDERSTAND"
+            text = AlertTranslationManager.getUnderstandButton(lang)
             textSize = 13f
             setTextColor(Color.WHITE)
             setTypeface(null, android.graphics.Typeface.BOLD)

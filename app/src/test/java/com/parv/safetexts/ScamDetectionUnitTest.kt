@@ -311,4 +311,51 @@ class ScamDetectionUnitTest {
         val cashfreeScan = FraudDetectionEngine.analyze("https://cashfree.com/pay", "Secure payment checkout")
         assertEquals(0, cashfreeScan.score)
     }
+
+    @Test
+    fun testAlertLanguageTranslations() {
+        val testContent = "Dear customer, your SBI account is blocked due to KYC. Update now."
+        
+        // English
+        val (enTitle, enBody) = AlertCardBuilder.resolveScamCopy(testContent, language = AlertLanguage.ENGLISH)
+        assertEquals("POTENTIAL SCAM ALERT", enTitle)
+        assertTrue(enBody.contains("KYC or account-block scam"))
+        assertEquals("DISMISS", AlertTranslationManager.getDismissButton(AlertLanguage.ENGLISH))
+        assertEquals("LOOKS SAFE", AlertTranslationManager.getLooksSafeButton(AlertLanguage.ENGLISH))
+
+        // Hindi
+        val (hiTitle, hiBody) = AlertCardBuilder.resolveScamCopy(testContent, language = AlertLanguage.HINDI)
+        assertEquals("संदिग्ध बैंक केवाईसी / ब्लॉक स्कैम", hiTitle)
+        assertTrue(hiBody.contains("बैंक केवाईसी या खाता बंद करने का फर्जी झांसा"))
+        assertEquals("खारिज करें", AlertTranslationManager.getDismissButton(AlertLanguage.HINDI))
+        assertEquals("सुरक्षित दिखता है", AlertTranslationManager.getLooksSafeButton(AlertLanguage.HINDI))
+
+        // Marathi
+        val (mrTitle, mrBody) = AlertCardBuilder.resolveScamCopy(testContent, language = AlertLanguage.MARATHI)
+        assertEquals("बँक केवायसी / खाते ब्लॉक इशारा", mrTitle)
+        assertTrue(mrBody.contains("बँक केवायसी किंवा खाते बंद करण्याचा बनावट इशारा"))
+        assertEquals("रद्द करा", AlertTranslationManager.getDismissButton(AlertLanguage.MARATHI))
+        assertEquals("सुरक्षित दिसते", AlertTranslationManager.getLooksSafeButton(AlertLanguage.MARATHI))
+
+        // Kannada
+        val (knTitle, knBody) = AlertCardBuilder.resolveScamCopy(testContent, language = AlertLanguage.KANNADA)
+        assertEquals("ಬ್ಯಾಂಕ್ ಕೆವೈಸಿ / ಖಾತೆ ಬ್ಲಾಕ್ ಎಚ್ಚರಿಕೆ", knTitle)
+        assertTrue(knBody.contains("ಕೆವೈಸಿ ಅಥವಾ ಬ್ಯಾಂಕ್ ಖಾತೆ ನಿರ್ಬಂಧಿಸುವ ನಕಲಿ ಸಂದೇಶ"))
+        assertEquals("ತಿರಸ್ಕರಿಸಿ", AlertTranslationManager.getDismissButton(AlertLanguage.KANNADA))
+        assertEquals("ಸುರಕ್ಷಿತವಾಗಿದೆ", AlertTranslationManager.getLooksSafeButton(AlertLanguage.KANNADA))
+
+        // Tamil
+        val (taTitle, taBody) = AlertCardBuilder.resolveScamCopy(testContent, language = AlertLanguage.TAMIL)
+        assertEquals("வங்கி KYC / கணக்கு முடக்கம் எச்சரிக்கை", taTitle)
+        assertTrue(taBody.contains("வங்கி கேஒய்சி (KYC) அல்லது கணக்கு முடக்கப்படும்"))
+        assertEquals("விலக்கு", AlertTranslationManager.getDismissButton(AlertLanguage.TAMIL))
+        assertEquals("பாதுகாப்பானது", AlertTranslationManager.getLooksSafeButton(AlertLanguage.TAMIL))
+
+        // Telugu
+        val (teTitle, teBody) = AlertCardBuilder.resolveScamCopy(testContent, language = AlertLanguage.TELUGU)
+        assertEquals("బ్యాంక్ కేవైసీ / ఖాతా బ్లాక్ హెచ్చరిక", teTitle)
+        assertTrue(teBody.contains("బ్యాంక్ కేవైసీ లేదా ఖాతా బ్లాక్ అయ్యే నకిలీ బెదిరింపు"))
+        assertEquals("రద్దు చేయి", AlertTranslationManager.getDismissButton(AlertLanguage.TELUGU))
+        assertEquals("సురక్షితంగా ఉంది", AlertTranslationManager.getLooksSafeButton(AlertLanguage.TELUGU))
+    }
 }
