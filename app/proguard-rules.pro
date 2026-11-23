@@ -34,8 +34,10 @@
 -keep class com.parv.safetexts.AppDatabase { *; }
 -dontwarn androidx.room.**
 
-# TensorFlow Lite
+# TensorFlow Lite / LiteRT
 -keep class org.tensorflow.lite.** { *; }
 -dontwarn org.tensorflow.lite.**
+-keep class com.google.ai.edge.litert.** { *; }
+-dontwarn com.google.ai.edge.litert.**
 -dontwarn com.google.auto.value.**
 

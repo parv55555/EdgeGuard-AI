@@ -1215,10 +1215,12 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                                     cleanText == "•" || cleanText == "·"
 
                 if (!isDocMetadata || isApk) {
-                    val isFakeCredit = (isWhatsApp || packageName.contains("telegram")) &&
+                    val isFakeCredit = if (ScamAnalyzer.ENABLE_MESSAGE_KEYWORDS) {
+                        (isWhatsApp || packageName.contains("telegram")) &&
                         (lowerText.contains("credited") || lowerText.contains("received") || lowerText.contains("successful") || lowerText.contains("debited")) &&
                         (lowerText.contains("rs") || lowerText.contains("inr") || lowerText.contains("₹") || lowerText.contains("amount")) &&
                         (lowerText.contains("account") || lowerText.contains("wallet") || lowerText.contains("upi") || lowerText.contains("a/c") || lowerText.contains("paytm") || lowerText.contains("phonepe") || lowerText.contains("gpay"))
+                    } else false
 
                     val isKnownBadId = !isApk && !isFakeCredit && (
                         viewId.endsWith("name_in_message_color") || 

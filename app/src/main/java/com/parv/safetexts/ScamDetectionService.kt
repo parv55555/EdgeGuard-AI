@@ -483,11 +483,10 @@ class ScamDetectionService : NotificationListenerService() {
 
         val isGroup = extras.getBoolean(Notification.EXTRA_IS_GROUP_CONVERSATION, false)
         
-        // Skip official WhatsApp service account, alphanumeric SMS senders, and saved contacts as requested.
+        // Skip official WhatsApp service account and saved contacts as requested.
         val isWhatsApp = packageName.contains("whatsapp")
         val isOfficialWhatsApp = isWhatsApp && title.lowercase() == "whatsapp"
         val isVerifiedCompany = isWhatsApp && ContactUtils.isWhatsAppCompanyAccount(title)
-        val isAlphanumericSms = isSms && ContactUtils.isAlphanumericSmsSender(title)
         val isSavedContact = ContactUtils.isContactExists(applicationContext, title)
         
         // WhatsApp groups, channels, and admin-only communities might bypass the IS_GROUP_CONVERSATION flag.
@@ -504,7 +503,7 @@ class ScamDetectionService : NotificationListenerService() {
             key.contains("@g.us") || key.contains("@newsletter") || key.contains("@broadcast")
         )
 
-        if (isOfficialWhatsApp || isVerifiedCompany || isAlphanumericSms || isSavedContact || (isWhatsApp && isReallyGroup) || isJidGroupOrChannel) {
+        if (isOfficialWhatsApp || isVerifiedCompany || isSavedContact || (isWhatsApp && isReallyGroup) || isJidGroupOrChannel) {
             return
         }
 
@@ -668,24 +667,18 @@ class ScamDetectionService : NotificationListenerService() {
             }
         }
 
-        // Ignore SMS from business/alphanumeric senders (only allow purely numeric/phone-number senders) for normal scam processing
-        if (isSms) {
-            val isPhoneNumber = title.matches(Regex("^[\\d\\s\\+\\-\\(\\)]+\$"))
-            if (!isPhoneNumber) {
-                Log.d("ScamDetection", "Ignoring SMS from non-numeric sender: $title")
-                return
-            }
-        }
 
         serviceScope.launch {
             messageMutex.withLock {
                 val lowerText = text.lowercase(Locale.ROOT)
                 val isApk = lowerText.contains(".apk")
                 
-                val isFakeCredit = isSms && (
-                    (lowerText.contains("credited") || lowerText.contains("received") || lowerText.contains("debited") || lowerText.contains("deducted")) && 
-                    (lowerText.contains("rs") || lowerText.contains("inr") || lowerText.contains("amount"))
-                )
+                val isFakeCredit = if (ScamAnalyzer.ENABLE_MESSAGE_KEYWORDS) {
+                    isSms && (
+                        (lowerText.contains("credited") || lowerText.contains("received") || lowerText.contains("debited") || lowerText.contains("deducted")) && 
+                        (lowerText.contains("rs") || lowerText.contains("inr") || lowerText.contains("amount"))
+                    )
+                } else false
 
                 val isKnownContact = ContactUtils.isContactExists(applicationContext, title)
                 val isTrusted = ContactUtils.isTrustedSender(applicationContext, title)
@@ -694,9 +687,8 @@ class ScamDetectionService : NotificationListenerService() {
                     return@withLock
                 }
                 
-                // Allow analysis if it hits a deterministic rule (like fake credit/APK).
-                // For regular text messages, we only run the PyTorch text analyzer on standard SMS (non-VoIP).
-                if (isApk || isFakeCredit || (!isKnownContact && !isVoipApp)) {
+                // Allow analysis for any non-saved sender (SMS, WhatsApp, Telegram, etc.) or deterministic triggers
+                if (isApk || isFakeCredit || !isKnownContact) {
                     val message = MessageEntity(
                         sender = title,
                         content = text,

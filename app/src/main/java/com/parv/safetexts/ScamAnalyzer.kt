@@ -56,6 +56,9 @@ class ScamAnalyzer private constructor(private val context: Context) {
     }
 
     companion object {
+        // Flag to toggle between Tier-1 Deterministic Keywords + Tier-2 Model vs Pure Model-Only Mode
+        const val ENABLE_MESSAGE_KEYWORDS = false
+
         @Volatile
         private var instance: ScamAnalyzer? = null
         private val WHITESPACE_REGEX = Regex("\\s+")
@@ -231,7 +234,7 @@ class ScamAnalyzer private constructor(private val context: Context) {
         }
 
         val cleanText = message.content.replace("\n", " ").replace(WHITESPACE_REGEX, " ").trim()
-        if (!isApk && isTelecomServiceMessage(cleanText)) {
+        if (ENABLE_MESSAGE_KEYWORDS && !isApk && isTelecomServiceMessage(cleanText)) {
             Log.d("ScamAnalyzer", "Whitelisted legitimate telecom carrier notification: ${cleanText.take(30)}")
             return
         }
@@ -245,10 +248,10 @@ class ScamAnalyzer private constructor(private val context: Context) {
         }
 
         val cached = classificationCache[msgHash]
-        val fastScam = if (!isApk && !isFakeCredit && cached == null) checkFastDeterministicScam(cleanText) else null
+        val fastScam = if (ENABLE_MESSAGE_KEYWORDS && !isApk && !isFakeCredit && cached == null) checkFastDeterministicScam(cleanText) else null
 
         val immediateClassification = when {
-            isApk || isFakeCredit -> Pair("Alert", 1.0f)
+            isApk || (ENABLE_MESSAGE_KEYWORDS && isFakeCredit) -> Pair("Alert", 1.0f)
             cached != null -> cached
             fastScam != null -> fastScam
             else -> null
@@ -307,9 +310,10 @@ class ScamAnalyzer private constructor(private val context: Context) {
             return
         }
 
-        // Transformer inference path for uncatalogued complex text patterns
+        // Transformer inference path for direct neural model evaluation
         scope.launch(Dispatchers.Default) {
             try {
+                Log.d("ScamAnalyzer", "Directly evaluating message with A0908I neural model: '${cleanText.take(30)}...'")
                 val classified = tfliteClassifier.classify(cleanText)
                 classificationCache[msgHash] = classified
                 if (classificationCache.size > 2000) {

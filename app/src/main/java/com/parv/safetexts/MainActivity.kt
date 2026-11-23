@@ -77,6 +77,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Initialize ScamAnalyzer & run TFLite active classifier startup self-test immediately
+        ScamAnalyzer.getInstance(applicationContext)
         
         val sharedPref = getSharedPreferences("safetexts_prefs", MODE_PRIVATE)
         val hasAccepted = sharedPref.getBoolean("has_accepted_tc", false)

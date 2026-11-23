@@ -80,7 +80,7 @@ android {
     }
 
     androidResources {
-        noCompress += listOf("tflite", "A0908I", "model", "ftz")
+        noCompress += listOf("tflite", "A0908I", "model", "ftz", "txt")
     }
 
 }
@@ -114,7 +114,6 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     
-    // TFLite
-    implementation("org.tensorflow:tensorflow-lite-task-text:0.4.4")
-    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+    // TFLite / LiteRT
+    implementation("com.google.ai.edge.litert:litert:1.4.2")
 }
