@@ -1217,9 +1217,21 @@ class MessageReaderAccessibilityService : AccessibilityService() {
                 if (!isDocMetadata || isApk) {
                     val isFakeCredit = if (ScamAnalyzer.ENABLE_MESSAGE_KEYWORDS) {
                         (isWhatsApp || packageName.contains("telegram")) &&
-                        (lowerText.contains("credited") || lowerText.contains("received") || lowerText.contains("successful") || lowerText.contains("debited")) &&
-                        (lowerText.contains("rs") || lowerText.contains("inr") || lowerText.contains("₹") || lowerText.contains("amount")) &&
-                        (lowerText.contains("account") || lowerText.contains("wallet") || lowerText.contains("upi") || lowerText.contains("a/c") || lowerText.contains("paytm") || lowerText.contains("phonepe") || lowerText.contains("gpay"))
+                        (lowerText.contains("credited") || lowerText.contains("received") || lowerText.contains("successful") || lowerText.contains("debited") ||
+                         lowerText.contains("prapt hue") || lowerText.contains("jama hue") || lowerText.contains("transfer ho gaye") ||
+                         lowerText.contains("क्रेडिट") || lowerText.contains("जमा") || lowerText.contains("प्राप्त") ||
+                         lowerText.contains("जमा झाले") || lowerText.contains("मिळाले") ||
+                         lowerText.contains("வரவு") || lowerText.contains("பெறப்பட்டது") ||
+                         lowerText.contains("జమ") || lowerText.contains("స్వీకరించబడింది") ||
+                         lowerText.contains("ಜಮಾ") || lowerText.contains("ಸ್ವೀಕರಿಸಲಾಗಿದೆ") ||
+                         lowerText.contains("ക്രെഡിറ്റ്") || lowerText.contains("ലഭിച്ചു")) &&
+                        (lowerText.contains("rs") || lowerText.contains("inr") || lowerText.contains("₹") || lowerText.contains("amount") ||
+                         lowerText.contains("रुपये") || lowerText.contains("ரூபாய்") || lowerText.contains("రూపాయలు") ||
+                         lowerText.contains("ರೂಪಾಯಿ") || lowerText.contains("രൂപ")) &&
+                        (lowerText.contains("account") || lowerText.contains("wallet") || lowerText.contains("upi") || lowerText.contains("a/c") ||
+                         lowerText.contains("paytm") || lowerText.contains("phonepe") || lowerText.contains("gpay") ||
+                         lowerText.contains("खाता") || lowerText.contains("खाते") || lowerText.contains("वॉलेट") ||
+                         lowerText.contains("கணக்கு") || lowerText.contains("ఖాతా") || lowerText.contains("ಖಾತೆ") || lowerText.contains("അക്കൗണ്ട്"))
                     } else false
 
                     val isKnownBadId = !isApk && !isFakeCredit && (

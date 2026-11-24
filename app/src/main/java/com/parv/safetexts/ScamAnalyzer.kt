@@ -57,7 +57,7 @@ class ScamAnalyzer private constructor(private val context: Context) {
 
     companion object {
         // Flag to toggle between Tier-1 Deterministic Keywords + Tier-2 Model vs Pure Model-Only Mode
-        const val ENABLE_MESSAGE_KEYWORDS = false
+        const val ENABLE_MESSAGE_KEYWORDS = true
 
         @Volatile
         private var instance: ScamAnalyzer? = null
@@ -93,14 +93,19 @@ class ScamAnalyzer private constructor(private val context: Context) {
                 return false
             }
 
-            // 1. Missed call alerts (whether sent by telecom or routed through caller's numeric phone number)
+            // 1. Missed call alerts
             val isMissedCall = lower.contains("missed call") || 
                                lower.contains("missed a call") || 
                                lower.contains("u missed a call") || 
                                lower.contains("you missed a call") ||
                                lower.contains("call alert") ||
                                lower.contains("tried calling you") ||
-                               lower.contains("called you while")
+                               lower.contains("called you while") ||
+                               lower.contains("मिस्ड कॉल") ||
+                               lower.contains("தவறிய அழைப்பு") ||
+                               lower.contains("మిస్డ్ కాల్") ||
+                               lower.contains("ಮಿಸ್ಡ್ ಕಾಲ್") ||
+                               lower.contains("മിസ്ഡ് കോൾ")
 
             // 2. Call availability alerts (when caller becomes available to take calls)
             val isCallAvailable = (lower.contains("available to take") || 
@@ -116,7 +121,12 @@ class ScamAnalyzer private constructor(private val context: Context) {
                                   lower.contains("plan validity") || 
                                   lower.contains("pack expired") || 
                                   lower.contains("data pack exhausted") || 
-                                  lower.contains("daily data limit")
+                                  lower.contains("daily data limit") ||
+                                  lower.contains("रिचार्ज") || lower.contains("वैधता") ||
+                                  lower.contains("ரீசார்ஜ்") ||
+                                  lower.contains("రీఛార్జ్") ||
+                                  lower.contains("ರೀಚಾರ್ಜ್") ||
+                                  lower.contains("റീചാർജ്")
 
             return isMissedCall || isCallAvailable || isCarrierUpdate
         }
@@ -131,54 +141,216 @@ class ScamAnalyzer private constructor(private val context: Context) {
             if (lower.contains(".apk")) {
                 return Pair("Alert", 1.0f)
             }
+
             // 2. Electricity bill disconnection scam
-            if ((lower.contains("electricity") || lower.contains("bijli") || lower.contains("power")) &&
-                (lower.contains("disconnect") || lower.contains("cut") || lower.contains("bill") || lower.contains("tonight") || lower.contains("9:30") || lower.contains("unpaid"))) {
+            // Multilingual: English, Hinglish, Hindi, Marathi, Tamil, Telugu, Kannada, Malayalam
+            val isElecEntity = lower.contains("electricity") || lower.contains("bijli") || lower.contains("bijlee") || lower.contains("power") ||
+                    lower.contains("बिजली") || lower.contains("विद्युत") ||
+                    lower.contains("वीज") || lower.contains("महावितरण") ||
+                    lower.contains("மின்சாரம்") || lower.contains("மின் கட்டணம்") || lower.contains("மின்கட்டணம்") ||
+                    lower.contains("విద్యుత్") || lower.contains("కరెంట్") ||
+                    lower.contains("ವಿದ್ಯುತ್") || lower.contains("ಕರೆಂಟ್") || lower.contains("ಬೆಸ್ಕಾಂ") ||
+                    lower.contains("വൈദ്യുതി") || lower.contains("കറന്റ്") || lower.contains("കെഎസ്ഇബി")
+
+            val isElecAction = lower.contains("disconnect") || lower.contains("cut") || lower.contains("unpaid") || lower.contains("tonight") || lower.contains("9:30") ||
+                    lower.contains("kat di jayegi") || lower.contains("kaat di") || lower.contains("aaj raat") || lower.contains("turant bhare") ||
+                    lower.contains("काट दी जाएगी") || lower.contains("बकाया") || lower.contains("डिस्कनेक्ट") || lower.contains("आज रात") ||
+                    lower.contains("खंडित") || lower.contains("थकीत") || lower.contains("आज रात्री") || lower.contains("तोडला जाईल") ||
+                    lower.contains("துண்டிக்கப்படும்") || lower.contains("நிலுவை") || lower.contains("இன்றிரவு") ||
+                    lower.contains("నిలిపివేయబడుతుంది") || lower.contains("కట్ చేయబడుతుంది") || lower.contains("బకాయి") || lower.contains("ఈ రాత్రి") ||
+                    lower.contains("ಕಡಿತಗೊಳಿಸಲಾಗುತ್ತದೆ") || lower.contains("ಸಂಪರ್ಕ ಕಡಿತ") || lower.contains("ಬಾಕಿ") || lower.contains("ಇಂದು ರಾತ್ರಿ") ||
+                    lower.contains("വിച്ഛേദിക്കും") || lower.contains("കുടിശ്ശിക") || lower.contains("ഇന്ന് രാത്രി")
+
+            if (isElecEntity && isElecAction) {
                 return Pair("Alert", 0.98f)
             }
-            // 3. Bank / PAN / KYC Block scam
-            if ((lower.contains("kyc") || lower.contains("pan card") || lower.contains("pancard") || lower.contains("aadhaar") || lower.contains("account") || lower.contains("debit card") || lower.contains("sim card") || lower.contains("sim block") || lower.contains("yono") || lower.contains("sbi")) &&
-                (lower.contains("block") || lower.contains("suspend") || lower.contains("update immediately") || lower.contains("deactivate") || lower.contains("expire") || lower.contains("click here") || lower.contains("update your"))) {
+
+            // 3. Bank / PAN / KYC / Account Suspension Scam
+            val isBankEntity = lower.contains("kyc") || lower.contains("pan card") || lower.contains("pancard") || lower.contains("aadhaar") || lower.contains("adhar") ||
+                    lower.contains("account") || lower.contains("debit card") || lower.contains("sim card") || lower.contains("sim block") || lower.contains("yono") || lower.contains("sbi") ||
+                    lower.contains("khata") || lower.contains("bank khata") ||
+                    lower.contains("केवाईसी") || lower.contains("पैन कार्ड") || lower.contains("आधार कार्ड") || lower.contains("बैंक खाता") || lower.contains("खाता") || lower.contains("सिम कार्ड") ||
+                    lower.contains("केवायसी") || lower.contains("पॅन कार्ड") || lower.contains("आधार") || lower.contains("बँक खाते") || lower.contains("खाते") ||
+                    lower.contains("கேஒய்சி") || lower.contains("பான் கார்டு") || lower.contains("ஆதார்") || lower.contains("வங்கி கணக்கு") || lower.contains("கணக்கு") ||
+                    lower.contains("కేవైసీ") || lower.contains("పాన్ కార్డ్") || lower.contains("ఆధార్") || lower.contains("బ్యాంకు ఖాతా") || lower.contains("ఖాతా") ||
+                    lower.contains("ಕೆವೈಸಿ") || lower.contains("ಪ್ಯಾನ್ ಕಾರ್ಡ್") || lower.contains("ಆಧಾರ್") || lower.contains("ಬ್ಯಾಂಕ್ ಖಾತೆ") || lower.contains("ಖಾತೆ") ||
+                    lower.contains("കെവൈസി") || lower.contains("പാൻ കാർഡ്") || lower.contains("ആധാർ") || lower.contains("ബാങ്ക് അക്കൗണ്ട്") || lower.contains("അക്കൗണ്ട്")
+
+            val isBankAction = lower.contains("block") || lower.contains("suspend") || lower.contains("update immediately") || lower.contains("deactivate") || lower.contains("expire") || lower.contains("click here") || lower.contains("update your") ||
+                    lower.contains("band ho jayega") || lower.contains("turant update") || lower.contains("rok diya gaya") ||
+                    lower.contains("ब्लॉक") || lower.contains("बंद") || lower.contains("निलंबित") || lower.contains("तुरंत अपडेट") || lower.contains("निष्क्रिय") || lower.contains("अपडेट") ||
+                    lower.contains("बंद होईल") || lower.contains("त्वरित अपडेट") || lower.contains("अद्यतनित") ||
+                    lower.contains("முடக்க") || lower.contains("இடைநிறுத்த") || lower.contains("புதுப்பிக்க") || lower.contains("செயலிழக்க") ||
+                    lower.contains("బ్లాక్") || lower.contains("నిలిపివేయ") || lower.contains("అప్‌డేట్") || lower.contains("నవీకరించ") ||
+                    lower.contains("ನಿರ್ಬಂಧಿಸ") || lower.contains("ಅಮಾನತು") || lower.contains("ತಕ್ಷಣ ನವೀಕರಿಸಿ") || lower.contains("ನವೀಕರಿಸ") || lower.contains("ಬ್ಲಾಕ್") ||
+                    lower.contains("ബ്ലോക്ക്") || lower.contains("നിർത്തിവ") || lower.contains("ഉടൻ അപ്ഡേറ്റ്") || lower.contains("പുതുക്കുക")
+
+            if (isBankEntity && isBankAction) {
                 return Pair("Alert", 0.97f)
             }
+
             // 4. Fake Lottery / KBC / Prize
-            if ((lower.contains("kbc") || lower.contains("lottery") || lower.contains("congratulations") || lower.contains("prize") || lower.contains("winner")) &&
-                (lower.contains("lakh") || lower.contains("crore") || lower.contains("won") || lower.contains("claim") || lower.contains("lucky"))) {
+            val isLotteryEntity = lower.contains("kbc") || lower.contains("lottery") || lower.contains("congratulations") || lower.contains("prize") || lower.contains("winner") || lower.contains("lucky draw") ||
+                    lower.contains("inam") || lower.contains("inaam") || lower.contains("badhai ho") ||
+                    lower.contains("लॉटरी") || lower.contains("बधाई") || lower.contains("इनाम") || lower.contains("विजेता") || lower.contains("लकी ड्रॉ") ||
+                    lower.contains("अभिनंदन") || lower.contains("बक्षीस") || lower.contains("जिंकले") ||
+                    lower.contains("லாட்டரி") || lower.contains("வாழ்த்துகள்") || lower.contains("பரிசு") || lower.contains("வெற்றியாளர்") ||
+                    lower.contains("లాటరీ") || lower.contains("అభినందనలు") || lower.contains("బహుమతి") || lower.contains("విజేత") ||
+                    lower.contains("ಲಾಟರಿ") || lower.contains("ಅಭಿನಂದನೆಗಳು") || lower.contains("ಬಹುಮಾನ") || lower.contains("ವಿಜೇತರು") ||
+                    lower.contains("ലോട്ടറി") || lower.contains("അഭിനന്ദനങ്ങൾ") || lower.contains("സമ്മാനം") || lower.contains("വിജയി")
+
+            val isLotteryAction = lower.contains("lakh") || lower.contains("crore") || lower.contains("won") || lower.contains("claim") || lower.contains("lucky") ||
+                    lower.contains("jeeta") || lower.contains("jeet gaye") || lower.contains("claim kare") || lower.contains("jeet") ||
+                    lower.contains("लाख") || lower.contains("करोड़") || lower.contains("जीता") || lower.contains("जीते") || lower.contains("दावा") ||
+                    lower.contains("कोटी") || lower.contains("दावा करा") || lower.contains("जिंकले") || lower.contains("बक्षीस") ||
+                    lower.contains("லட்சம்") || lower.contains("கோடி") || lower.contains("வென்றுள்ளீர்கள்") || lower.contains("வென்றீர்கள்") ||
+                    lower.contains("లక్ష") || lower.contains("కోట్లు") || lower.contains("గెలుచుకున్నారు") ||
+                    lower.contains("ಲಕ್ಷ") || lower.contains("ಕೋಟಿ") || lower.contains("ಗೆದ್ದಿದ್ದೀರಿ") ||
+                    lower.contains("ലക്ഷം") || lower.contains("കോടി") || lower.contains("വിജയിച്ചു") || lower.contains("നേടി")
+
+            if (isLotteryEntity && isLotteryAction) {
                 return Pair("Alert", 0.96f)
             }
-            // 5. Fake Job / YouTube task
-            if ((lower.contains("part time") || lower.contains("daily income") || lower.contains("youtube") || lower.contains("like and subscribe") || lower.contains("telegram")) &&
-                (lower.contains("per day") || lower.contains("earn") || lower.contains("salary") || lower.contains("daily") || lower.contains("rs.") || lower.contains("inr") || lower.contains("work from home"))) {
+
+            // 5. Fake Job / YouTube Tasks
+            val isJobEntity = lower.contains("part time") || lower.contains("daily income") || lower.contains("youtube") || lower.contains("like and subscribe") || lower.contains("telegram") || lower.contains("work from home") ||
+                    lower.contains("ghar baithe") || lower.contains("daily kamai") || lower.contains("paise kamaye") ||
+                    lower.contains("घर बैठे") || lower.contains("दैनिक आय") || lower.contains("पार्ट टाइम") ||
+                    lower.contains("घरी बसून") || lower.contains("घरबसल्या") || lower.contains("पार्ट टाईम") || lower.contains("दैनिक उत्पन्न") ||
+                    lower.contains("வீட்டிலிருந்தே") || lower.contains("பகுதி நேர") || lower.contains("பகுதி நேரம்") || lower.contains("தினசரி வருமானம்") ||
+                    lower.contains("ఇంటి నుంచే") || lower.contains("ఇంటి వద్ద") || lower.contains("పార్ట్ టైమ్") || lower.contains("రోజువారీ ఆదాయం") ||
+                    lower.contains("ಮನೆಯಿಂದಲೇ") || lower.contains("ಪಾರ್ಟ್ ಟೈಮ್") || lower.contains("ಅರೆಕಾಲಿಕ") || lower.contains("ದಿನದ ಆದಾಯ") ||
+                    lower.contains("വീട്ടിലിരുന്ന്") || lower.contains("പാർട്ട് ടൈം") || lower.contains("ദിവസേന വരുമാനം")
+
+            val isJobAction = lower.contains("per day") || lower.contains("earn") || lower.contains("salary") || lower.contains("daily") || lower.contains("rs.") || lower.contains("inr") ||
+                    lower.contains("roj kamao") || lower.contains("har din") || lower.contains("rojana") ||
+                    lower.contains("प्रति दिन") || lower.contains("कमाएं") || lower.contains("वेतन") || lower.contains("रोजाना") ||
+                    lower.contains("दररोज") || lower.contains("कमवा") || lower.contains("पगार") ||
+                    lower.contains("தினமும்") || lower.contains("சம்பாதிக்க") || lower.contains("சம்பளம்") || lower.contains("ஒரு நாளைக்கு") ||
+                    lower.contains("ప్రతి రోజు") || lower.contains("సంపాదించండి") || lower.contains("జీతం") || lower.contains("రోజుకు") ||
+                    lower.contains("ಪ್ರತಿದಿನ") || lower.contains("ಸಂಪಾದಿಸಿ") || lower.contains("ವೇತನ") || lower.contains("ಗಳಿಸಿ") || lower.contains("ದಿನಕ್ಕೆ") ||
+                    lower.contains("പ്രതിദിനം") || lower.contains("സമ്പാദിക്കുക") || lower.contains("ശമ്പളം") || lower.contains("സമ്പാദിക്കാം")
+
+            if (isJobEntity && isJobAction) {
                 return Pair("Alert", 0.95f)
             }
+
             // 6. Fake Traffic Challan
-            if ((lower.contains("challan") || lower.contains("echallan") || lower.contains("traffic")) &&
-                (lower.contains("pay") || lower.contains("court") || lower.contains(".apk") || lower.contains("fine") || lower.contains("vehicle"))) {
+            val isChallanEntity = lower.contains("challan") || lower.contains("echallan") || lower.contains("traffic") || lower.contains("parivahan") ||
+                    lower.contains("चालान") || lower.contains("ई-चालान") || lower.contains("ट्रैफिक") ||
+                    lower.contains("चलन") || lower.contains("ई-चलन") || lower.contains("वाहतूक") ||
+                    lower.contains("சலான்") || lower.contains("போக்குவரத்து") ||
+                    lower.contains("చలాన్") || lower.contains("ట్రాఫిక్") ||
+                    lower.contains("ಚಲನ್") || lower.contains("ಟ್ರಾಫಿಕ್") ||
+                    lower.contains("ചെല്ലാൻ") || lower.contains("ട്രാഫിക്")
+
+            val isChallanAction = lower.contains("pay") || lower.contains("court") || lower.contains(".apk") || lower.contains("fine") || lower.contains("vehicle") ||
+                    lower.contains("jurmana") || lower.contains("bhare") ||
+                    lower.contains("जुर्माना") || lower.contains("भुगतान") || lower.contains("कोर्ट") || lower.contains("वाहन") ||
+                    lower.contains("दंड") || lower.contains("भरा") || lower.contains("न्यायालय") ||
+                    lower.contains("அபராதம்") || lower.contains("செலுத்தவும்") || lower.contains("நீதிமன்றம்") ||
+                    lower.contains("జరిమానా") || lower.contains("చెల్లించండి") || lower.contains("కోర్టు") ||
+                    lower.contains("ದಂಡ") || lower.contains("ಪಾವತಿಸಿ") || lower.contains("ನ್ಯಾಯಾಲಯ") ||
+                    lower.contains("പിഴ") || lower.contains("അടയ്ക്കുക") || lower.contains("കോടതി")
+
+            if (isChallanEntity && isChallanAction) {
                 return Pair("Alert", 0.95f)
             }
+
             // 7. Sextortion / Digital Arrest
-            if ((lower.contains("cbi") || lower.contains("narcotics") || lower.contains("cyber crime") || lower.contains("police") || lower.contains("digital arrest")) &&
-                (lower.contains("warrant") || lower.contains("arrest") || lower.contains("illegal") || lower.contains("court") || lower.contains("summon") || lower.contains("case file"))) {
+            val isArrestEntity = lower.contains("cbi") || lower.contains("narcotics") || lower.contains("cyber crime") || lower.contains("police") || lower.contains("digital arrest") || lower.contains("customs") || lower.contains("ed") ||
+                    lower.contains("giraftari") || lower.contains("cyber thana") ||
+                    lower.contains("डिजिटल अरेस्ट") || lower.contains("सीबीआई") || lower.contains("पुलिस") || lower.contains("नारकोटिक्स") || lower.contains("साइबर अपराध") ||
+                    lower.contains("डिजिटल अटक") || lower.contains("पोलीस") || lower.contains("सायबर गुन्हे") ||
+                    lower.contains("டிஜிட்டல் கைது") || lower.contains("காவல்துறை") || lower.contains("போதைப்பொருள்") || lower.contains("சைபர் கிரைம்") ||
+                    lower.contains("డిజిటల్ అరెస్ట్") || lower.contains("పోలీస్") || lower.contains("నార్కోటిక్స్") || lower.contains("సైబర్ క్రైమ్") ||
+                    lower.contains("ಡಿಜಿಟಲ್ ಬಂಧನ") || lower.contains("ಪೊಲೀಸ್") || lower.contains("ಮಾದಕ ದ್ರವ್ಯ") || lower.contains("ಸೈಬರ್ ಕ್ರೈಮ್") ||
+                    lower.contains("ഡിജിറ്റൽ അറസ്റ്റ്") || lower.contains("പോലീസ്") || lower.contains("നാർക്കോട്ടിക്സ്") || lower.contains("സൈബർ ക്രൈം")
+
+            val isArrestAction = lower.contains("warrant") || lower.contains("arrest") || lower.contains("illegal") || lower.contains("court") || lower.contains("summon") || lower.contains("case file") ||
+                    lower.contains("वारंट") || lower.contains("गिरफ्तारी") || lower.contains("समन") || lower.contains("अवैध") || lower.contains("मुकदमा") ||
+                    lower.contains("वॉरंट") || lower.contains("अटक") || lower.contains("समन्स") || lower.contains("बेकायदेशीर") ||
+                    lower.contains("வாரண்ட்") || lower.contains("கைது") || lower.contains("அழைப்பாணை") || lower.contains("சட்டவிரோத") ||
+                    lower.contains("వారెంట్") || lower.contains("అరెస్ట్") || lower.contains("సమన్లు") || lower.contains("చట్టవిరుద్ధ") ||
+                    lower.contains("ವಾರೆಂಟ್") || lower.contains("ಬಂಧನ") || lower.contains("ಸಮನ್ಸ್") || lower.contains("ಕಾನೂನುಬಾಹಿರ") ||
+                    lower.contains("വാറണ്ട്") || lower.contains("അറസ്റ്റ്") || lower.contains("സമ്മൻസ്") || lower.contains("നിയമവിരുദ്ധ")
+
+            if (isArrestEntity && isArrestAction) {
                 return Pair("Alert", 0.99f)
             }
+
             // 8. India Post / Courier delivery address update scam
-            if ((lower.contains("india post") || lower.contains("post office") || lower.contains("courier") || lower.contains("parcel") || lower.contains("shipment") || lower.contains("package") || lower.contains("delivery")) &&
-                (lower.contains("address") || lower.contains("failed") || lower.contains("suspend") || lower.contains("update") || lower.contains("reschedule") || lower.contains("undelivered"))) {
+            val isCourierEntity = lower.contains("india post") || lower.contains("post office") || lower.contains("courier") || lower.contains("parcel") || lower.contains("shipment") || lower.contains("package") || lower.contains("delivery") ||
+                    lower.contains("dak vibhag") ||
+                    lower.contains("इंडिया पोस्ट") || lower.contains("डाकघर") || lower.contains("पार्सल") || lower.contains("कूरियर") ||
+                    lower.contains("टपाल") || lower.contains("कुरिअर") ||
+                    lower.contains("இந்தியா போஸ்ட்") || lower.contains("தபால்") || lower.contains("பார்சல்") || lower.contains("கூரியர்") ||
+                    lower.contains("ఇండియా పోస్ట్") || lower.contains("పోస్ట్ ఆఫీస్") || lower.contains("పార్శిల్") || lower.contains("కొరియర్") ||
+                    lower.contains("ಇಂಡಿಯಾ ಪೋಸ್ಟ್") || lower.contains("ಅಂಚೆ ಕಚೇರಿ") || lower.contains("ಪಾರ್ಸೆಲ್") || lower.contains("ಕೊರಿಯರ್") ||
+                    lower.contains("ഇന്ത്യ പോസ്റ്റ്") || lower.contains("പോസ്റ്റ് ഓഫീസ്") || lower.contains("പാർസൽ") || lower.contains("കൊറിയർ")
+
+            val isCourierAction = lower.contains("address") || lower.contains("failed") || lower.contains("suspend") || lower.contains("update") || lower.contains("reschedule") || lower.contains("undelivered") ||
+                    lower.contains("pata update") || lower.contains("address galat") ||
+                    lower.contains("पता अपडेट") || lower.contains("विफल") || lower.contains("अधूरा पता") || lower.contains("अवितरित") ||
+                    lower.contains("पत्ता") || lower.contains("अयशस्वी") || lower.contains("अपूर्ण") ||
+                    lower.contains("முகவரி") || lower.contains("தோல்வியடைந்தது") || lower.contains("புதுப்பிக்கவும்") ||
+                    lower.contains("చిరునామా") || lower.contains("విఫలమైంది") || lower.contains("అప్‌డేట్") ||
+                    lower.contains("ವಿಳಾಸ") || lower.contains("ವಿಫಲವಾಗಿದೆ") || lower.contains("ನವೀಕರಿಸಿ") ||
+                    lower.contains("വിലാസം") || lower.contains("പരാജയപ്പെട്ടു") || lower.contains("അപ്ഡേറ്റ്")
+
+            if (isCourierEntity && isCourierAction) {
                 return Pair("Alert", 0.96f)
             }
+
             // 9. Remote access tools / OTP fraud
-            if ((lower.contains("anydesk") || lower.contains("teamviewer") || lower.contains("quicksupport") || lower.contains("rustdesk")) ||
-                ((lower.contains("otp") || lower.contains("one time password") || lower.contains("verification code")) &&
-                 (lower.contains("share") || lower.contains("forward") || lower.contains("send to") || lower.contains("tell me")) &&
-                 (!lower.contains("do not share") && !lower.contains("never share") && !lower.contains("don't share") && !lower.contains("dont share")))) {
+            val isRemoteTool = lower.contains("anydesk") || lower.contains("teamviewer") || lower.contains("quicksupport") || lower.contains("rustdesk") || lower.contains("screen share")
+            val isOtpEntity = lower.contains("otp") || lower.contains("one time password") || lower.contains("verification code") ||
+                    lower.contains("ओटीपी") || lower.contains("सत्यापन कोड") ||
+                    lower.contains("पड पडताळणी") ||
+                    lower.contains("ஓடிபி") || lower.contains("சரிபார்ப்பு") ||
+                    lower.contains("ఓటీపీ") || lower.contains("ధృవీకరణ") ||
+                    lower.contains("ಒಟಿಪಿ") || lower.contains("ದೃಢೀಕರಣ") ||
+                    lower.contains("ഒടിപി") || lower.contains("സ്ഥിരീകരണ")
+
+            val isOtpTheftAction = (lower.contains("share") || lower.contains("forward") || lower.contains("send to") || lower.contains("tell me") ||
+                    lower.contains("bhejo") || lower.contains("batao") || lower.contains("share karo") ||
+                    lower.contains("शेयर करें") || lower.contains("भेजें") || lower.contains("बताएं") || lower.contains("फॉरवर्ड करें") ||
+                    lower.contains("शेअर करा") || lower.contains("पाठवा") || lower.contains("सांगा") ||
+                    lower.contains("பகிரவும்") || lower.contains("அனுப்பவும்") || lower.contains("சொல்லுங்கள்") ||
+                    lower.contains("షేర్ చేయండి") || lower.contains("పంపండి") || lower.contains("చెప్పండి") ||
+                    lower.contains("ಹಂಚಿಕೊಳ್ಳಿ") || lower.contains("ಕಳುಹಿಸಿ") || lower.contains("ತಿಳಿಸಿ") ||
+                    lower.contains("പങ്കിടുക") || lower.contains("അയക്കുക") || lower.contains("പറയുക")) &&
+                    (!lower.contains("do not share") && !lower.contains("never share") && !lower.contains("don't share") && !lower.contains("dont share") &&
+                     !lower.contains("कभी शेयर न करें") && !lower.contains("शेयर न करें") && !lower.contains("सांगू नका") && !lower.contains("பகிர வேண்டாம்"))
+
+            if (isRemoteTool || (isOtpEntity && isOtpTheftAction)) {
                 return Pair("Alert", 0.98f)
             }
+
             // 10. Pre-approved loan / refund scam
-            if ((lower.contains("loan") || lower.contains("refund") || lower.contains("credit card limit") || lower.contains("cashback")) &&
-                (lower.contains("pre-approved") || lower.contains("approved") || lower.contains("credited") || lower.contains("claim now") || lower.contains("apply now")) &&
-                (lower.contains("link") || lower.contains("http") || lower.contains("bit.ly") || lower.contains("click"))) {
+            val isLoanEntity = lower.contains("loan") || lower.contains("refund") || lower.contains("credit card limit") || lower.contains("cashback") ||
+                    lower.contains("turant loan") ||
+                    lower.contains("लोन") || lower.contains("ऋण") || lower.contains("रिफंड") || lower.contains("कैशबैक") ||
+                    lower.contains("कर्ज") || lower.contains("परतावा") || lower.contains("कॅशबॅक") ||
+                    lower.contains("கடன்") || lower.contains("பணத்தைத் திரும்பப்பெறுதல்") || lower.contains("கேஷ்பேக்") ||
+                    lower.contains("రుణం") || lower.contains("రీఫండ్") || lower.contains("క్యాష్‌బ్యాక్") ||
+                    lower.contains("ಸಾಲ") || lower.contains("ಮರುಪಾವತಿ") || lower.contains("ಕ್ಯಾಶ್‌ಬ್ಯಾಕ್") ||
+                    lower.contains("വായ്പ") || lower.contains("ലോൺ") || lower.contains("റീഫണ്ട്") || lower.contains("ക്യാഷ്ബാക്ക്")
+
+            val isLoanAction = (lower.contains("pre-approved") || lower.contains("approved") || lower.contains("credited") || lower.contains("claim now") || lower.contains("apply now") ||
+                    lower.contains("manjoor") || lower.contains("pass hua") ||
+                    lower.contains("स्वीकृत") || lower.contains("मंजूर") || lower.contains("दावा करें") ||
+                    lower.contains("मंजूर") || lower.contains("दावा करा") ||
+                    lower.contains("ஒப்புதல்") || lower.contains("விண்ணப்பிக்கவும்") ||
+                    lower.contains("ఆమోదించబడింది") || lower.contains("క్లెయిమ్") ||
+                    lower.contains("ಅನುಮೋದಿಸಲಾಗಿದೆ") || lower.contains("ಕ್ಲೈಮ್") ||
+                    lower.contains("അനുവദിച്ചു") || lower.contains("ക്ലെയിം")) &&
+                    (lower.contains("link") || lower.contains("http") || lower.contains("bit.ly") || lower.contains("click") || lower.contains("url") || lower.contains("லிங்க்") || lower.contains("లింక్") || lower.contains("ಲಿಂಕ್"))
+
+            if (isLoanEntity && isLoanAction) {
                 return Pair("Alert", 0.95f)
             }
+
             // 11. Malicious Web Fraud, Fake Govt & Bank URLs in Messages
             val highestRisk = FraudDetectionEngine.findHighestRiskUrlInText(text)
             if (highestRisk != null) {

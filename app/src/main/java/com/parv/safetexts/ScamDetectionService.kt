@@ -673,10 +673,20 @@ class ScamDetectionService : NotificationListenerService() {
                 val lowerText = text.lowercase(Locale.ROOT)
                 val isApk = lowerText.contains(".apk")
                 
+                val isNumericSender = ContactUtils.isRawPhoneNumber(title) || !ContactUtils.isAlphanumericSmsSender(title)
                 val isFakeCredit = if (ScamAnalyzer.ENABLE_MESSAGE_KEYWORDS) {
-                    isSms && (
-                        (lowerText.contains("credited") || lowerText.contains("received") || lowerText.contains("debited") || lowerText.contains("deducted")) && 
-                        (lowerText.contains("rs") || lowerText.contains("inr") || lowerText.contains("amount"))
+                    (!isSms || isNumericSender) && (
+                        (lowerText.contains("credited") || lowerText.contains("received") || lowerText.contains("debited") || lowerText.contains("deducted") ||
+                         lowerText.contains("prapt hue") || lowerText.contains("jama hue") || lowerText.contains("transfer ho gaye") ||
+                         lowerText.contains("क्रेडिट") || lowerText.contains("जमा") || lowerText.contains("प्राप्त") ||
+                         lowerText.contains("जमा झाले") || lowerText.contains("मिळाले") ||
+                         lowerText.contains("வரவு") || lowerText.contains("பெறப்பட்டது") ||
+                         lowerText.contains("జమ") || lowerText.contains("స్వీకరించబడింది") ||
+                         lowerText.contains("ಜಮಾ") || lowerText.contains("ಸ್ವೀಕರಿಸಲಾಗಿದೆ") ||
+                         lowerText.contains("ക്രെഡിറ്റ്") || lowerText.contains("ലഭിച്ചു")) && 
+                        (lowerText.contains("rs") || lowerText.contains("inr") || lowerText.contains("₹") || lowerText.contains("amount") ||
+                         lowerText.contains("रुपये") || lowerText.contains("रूபாய்") || lowerText.contains("రూపాయలు") ||
+                         lowerText.contains("ರೂಪಾಯಿ") || lowerText.contains("രൂപ"))
                     )
                 } else false
 
