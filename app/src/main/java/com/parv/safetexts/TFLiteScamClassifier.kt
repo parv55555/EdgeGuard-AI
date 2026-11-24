@@ -115,7 +115,7 @@ class TFLiteScamClassifier(private val context: Context) {
 
     private fun loadModel() {
         try {
-            val candidateFiles = listOf("A0908I.tflite", "edgeguard_indicbert_int8.tflite", "A0908I", "model.tflite")
+            val candidateFiles = listOf("A0908I.tflite", "A0908i.tflite", "edgeguard_indicbert_int8.tflite", "A0908I", "A0908i", "model.tflite")
             var resolvedFile = "A0908I.tflite"
             val assetList = try { context.assets.list("")?.toSet() ?: emptySet() } catch (_: Exception) { emptySet() }
             for (candidate in candidateFiles) {

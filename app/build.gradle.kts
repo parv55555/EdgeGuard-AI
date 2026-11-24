@@ -80,7 +80,7 @@ android {
     }
 
     androidResources {
-        noCompress += listOf("tflite", "A0908I", "model", "ftz", "txt")
+        noCompress += listOf("tflite", "A0908i", "A0908I", "model", "ftz", "txt")
     }
 
 }

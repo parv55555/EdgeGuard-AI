@@ -485,7 +485,7 @@ class ScamAnalyzer private constructor(private val context: Context) {
         // Transformer inference path for direct neural model evaluation
         scope.launch(Dispatchers.Default) {
             try {
-                Log.d("ScamAnalyzer", "Directly evaluating message with A0908I neural model: '${cleanText.take(30)}...'")
+                Log.d("ScamAnalyzer", "Directly evaluating message with A0908i neural model: '${cleanText.take(30)}...'")
                 val classified = tfliteClassifier.classify(cleanText)
                 classificationCache[msgHash] = classified
                 if (classificationCache.size > 2000) {
