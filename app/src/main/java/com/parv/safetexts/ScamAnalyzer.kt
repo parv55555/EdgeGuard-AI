@@ -405,6 +405,12 @@ class ScamAnalyzer private constructor(private val context: Context) {
             return
         }
 
+        val isSms = message.appName.equals("SMS", ignoreCase = true)
+        if (isSms && ContactUtils.isPromotionalSmsSender(message.sender)) {
+            Log.d("ScamAnalyzer", "Skipping analysis for promotional SMS sender: ${message.sender}")
+            return
+        }
+
         val cleanText = message.content.replace("\n", " ").replace(WHITESPACE_REGEX, " ").trim()
         if (ENABLE_MESSAGE_KEYWORDS && !isApk && isTelecomServiceMessage(cleanText)) {
             Log.d("ScamAnalyzer", "Whitelisted legitimate telecom carrier notification: ${cleanText.take(30)}")

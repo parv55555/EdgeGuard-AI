@@ -508,6 +508,12 @@ class MessageReaderAccessibilityService : AccessibilityService() {
             val isAlphabetSender = (isWhatsApp || isSms) && 
                 (ContactUtils.isAlphabetOrAlphanumeric(currentChatTitle) || ContactUtils.isContactExists(this, currentChatTitle) || !ContactUtils.isRawPhoneNumber(currentChatTitle))
 
+            // Ignore promotional SMS from TRAI DLT registered promotional senders ending in -P (e.g. ABS-XYSB-P, VM-FLPKRT-P)
+            if (isSms && ContactUtils.isPromotionalSmsSender(currentChatTitle)) {
+                Log.d("MessageReader", "Skipping promotional SMS sender: '$currentChatTitle'")
+                return
+            }
+
             // 6. STRICTLY SCAN CHAT MESSAGES ONLY (ONLY THE CHAT PART):
             // Toolbars, popup menus (3 dots), compose input bars, and settings are NEVER scanned!
             val messageList = findMessageListContainer(rootNode, packageName)

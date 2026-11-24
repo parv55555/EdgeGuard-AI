@@ -507,6 +507,12 @@ class ScamDetectionService : NotificationListenerService() {
             return
         }
 
+        // Ignore promotional SMS from TRAI DLT registered promotional senders ending in -P (e.g. ABS-XYSB-P, VM-FLPKRT-P)
+        if (isSms && ContactUtils.isPromotionalSmsSender(title)) {
+            Log.d("ScamDetection", "Ignoring promotional SMS from sender: $title")
+            return
+        }
+
         // Intercept VoIP calls before system notification filtering
         if (isVoipApp) {
             val isCallCategory = sbn.notification.category == Notification.CATEGORY_CALL

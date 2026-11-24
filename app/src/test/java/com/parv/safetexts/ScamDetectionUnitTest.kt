@@ -443,4 +443,36 @@ class ScamDetectionUnitTest {
         assertEquals("రద్దు చేయి", AlertTranslationManager.getDismissButton(AlertLanguage.TELUGU))
         assertEquals("సురక్షితంగా ఉంది", AlertTranslationManager.getLooksSafeButton(AlertLanguage.TELUGU))
     }
+@Test
+    fun testPromotionalSmsSenderFiltering() {
+        val promotionalSenders = listOf(
+            "ABS-XYSB-P",
+            "VM-FLPKRT-P",
+            "AD-SWIGGY-P",
+            "BZ-MYNTRA-P",
+            "JX-AIRTEL-P",
+            "123456-P",
+            "XY-ABC-P",
+            "abs-xysb-p",
+            "AD-DEALS-P "
+        )
+        for (sender in promotionalSenders) {
+            assertTrue("Sender should be identified as promotional: " + sender, ContactUtils.isPromotionalSmsSender(sender))
+        }
+
+        val nonPromotionalSenders = listOf(
+            "xyz-xyz-T",
+            "AD-HDFCBK-T",
+            "VK-SBIINB-T",
+            "HDFCBK",
+            "SBIINB",
+            "VM-AIRTEL-S",
+            "+919876543210",
+            "9876543210",
+            "Google"
+        )
+        for (sender in nonPromotionalSenders) {
+            assertFalse("Sender should NOT be identified as promotional: " + sender, ContactUtils.isPromotionalSmsSender(sender))
+        }
+    }
 }
