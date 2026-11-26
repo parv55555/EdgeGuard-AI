@@ -130,17 +130,8 @@ fun PermissionsScreen(navController: NavController) {
     var isUsageStatsEnabled by remember {
         mutableStateOf(hasUsageStatsPermission(context))
     }
-    var isDefaultBrowserEnabled by remember {
-        mutableStateOf(SafeBrowserLauncher.isDefaultBrowser(context))
-    }
 
     var showAccessibilityDisclosure by remember { mutableStateOf(false) }
-
-    val defaultBrowserLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-        isDefaultBrowserEnabled = SafeBrowserLauncher.isDefaultBrowser(context)
-    }
 
     // Permission launchers
     val contactsPermissionLauncher = rememberLauncherForActivityResult(
@@ -172,7 +163,6 @@ fun PermissionsScreen(navController: NavController) {
                 isOverlayPermissionGranted = Settings.canDrawOverlays(context)
                 isBatteryOptimized = pm.isIgnoringBatteryOptimizations(context.packageName)
                 isUsageStatsEnabled = hasUsageStatsPermission(context)
-                isDefaultBrowserEnabled = SafeBrowserLauncher.isDefaultBrowser(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -349,34 +339,6 @@ fun PermissionsScreen(navController: NavController) {
                             }
                         )
                     }
-                }
-            }
-
-            Text(
-                "Link Shield Protection",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.Start)
-            )
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    PermissionRow(
-                        title = "Default Browser Protection",
-                        description = "Set EdgeGuard AI as default browser to scan web links offline for scams before opening.",
-                        isGranted = isDefaultBrowserEnabled,
-                        onToggle = {
-                            val activity = context as? android.app.Activity
-                            if (activity != null) {
-                                SafeBrowserLauncher.requestDefaultBrowser(activity, defaultBrowserLauncher)
-                            }
-                        }
-                    )
                 }
             }
 
