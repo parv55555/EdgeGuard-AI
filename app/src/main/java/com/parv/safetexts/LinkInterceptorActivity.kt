@@ -46,7 +46,7 @@ class LinkInterceptorActivity : ComponentActivity() {
         }
 
         if (LinkShieldAllowlist.isAllowlisted(rawUrl)) {
-            SafeBrowserLauncher.openInRealBrowser(this, rawUrl)
+            SafeBrowserLauncher.openInRealBrowser(applicationContext, rawUrl)
             finish()
             return
         }
@@ -70,7 +70,7 @@ class LinkInterceptorActivity : ComponentActivity() {
                                 result = state.result,
                                 onGoBack = { finish() },
                                 onOpenAnyway = {
-                                    SafeBrowserLauncher.openInRealBrowser(this@LinkInterceptorActivity, rawUrl)
+                                    SafeBrowserLauncher.openInRealBrowser(applicationContext, rawUrl)
                                     finish()
                                 }
                             )
@@ -85,7 +85,7 @@ class LinkInterceptorActivity : ComponentActivity() {
                 LinkShieldScanner.scan(applicationContext, rawUrl)
             }
             if (!scanResult.isScam) {
-                SafeBrowserLauncher.openInRealBrowser(this@LinkInterceptorActivity, rawUrl)
+                SafeBrowserLauncher.openInRealBrowser(applicationContext, rawUrl)
                 finish()
             } else {
                 uiState = LinkShieldUiState.Warning(scanResult)

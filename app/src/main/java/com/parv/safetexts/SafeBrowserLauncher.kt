@@ -24,12 +24,15 @@ object SafeBrowserLauncher {
 
     fun openInRealBrowser(context: Context, rawUrl: String): Boolean {
         return try {
-            val uri = Uri.parse(rawUrl)
+            val formattedUrl = if (!rawUrl.startsWith("http://", ignoreCase = true) && !rawUrl.startsWith("https://", ignoreCase = true)) {
+                "https://$rawUrl"
+            } else {
+                rawUrl
+            }
+            val uri = Uri.parse(formattedUrl)
             val baseIntent = Intent(Intent.ACTION_VIEW, uri).apply {
                 addCategory(Intent.CATEGORY_BROWSABLE)
-                if (context !is Activity) {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
 
             val resolveList = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -57,16 +60,36 @@ object SafeBrowserLauncher {
                 it.activityInfo != null && it.activityInfo.packageName != context.packageName
             }
 
-            if (nonSelfBrowsers.isEmpty()) {
-                return false
+            val selectedPackage = if (nonSelfBrowsers.isNotEmpty()) {
+                PREFERRED_BROWSERS.firstOrNull { browserPkg ->
+                    nonSelfBrowsers.any { it.activityInfo.packageName == browserPkg }
+                } ?: nonSelfBrowsers.first().activityInfo.packageName
+            } else {
+                PREFERRED_BROWSERS.firstOrNull { pkg ->
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            context.packageManager.getPackageInfo(pkg, PackageManager.PackageInfoFlags.of(0))
+                        } else {
+                            @Suppress("DEPRECATION")
+                            context.packageManager.getPackageInfo(pkg, 0)
+                        }
+                        true
+                    } catch (_: Exception) {
+                        false
+                    }
+                }
             }
 
-            val selectedPackage = PREFERRED_BROWSERS.firstOrNull { browserPkg ->
-                nonSelfBrowsers.any { it.activityInfo.packageName == browserPkg }
-            } ?: nonSelfBrowsers.first().activityInfo.packageName
+            if (selectedPackage != null) {
+                baseIntent.setPackage(selectedPackage)
+                context.startActivity(baseIntent)
+                return true
+            }
 
-            baseIntent.setPackage(selectedPackage)
-            context.startActivity(baseIntent)
+            val chooserIntent = Intent.createChooser(baseIntent, "Open with").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(chooserIntent)
             true
         } catch (_: Exception) {
             false
