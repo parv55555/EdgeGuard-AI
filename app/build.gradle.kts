@@ -116,4 +116,8 @@ dependencies {
     
     // TFLite / LiteRT
     implementation("com.google.ai.edge.litert:litert:1.4.2")
+
+    // Link Shield network & HTML parsing
+    implementation(libs.okhttp)
+    implementation(libs.jsoup)
 }

@@ -406,7 +406,7 @@ object FraudDetectionEngine {
         var score = 0
         val reasons = mutableListOf<String>()
         var detectedCategory = "GENERIC"
-        val lowerText = screenText.lowercase(Locale.ROOT)
+        val lowerText = TFLiteScamClassifier.removeEmojis(screenText).lowercase(Locale.ROOT)
         val tld = cleanDomain.substringAfterLast('.', "").lowercase(Locale.ROOT)
 
         // ====================================================================

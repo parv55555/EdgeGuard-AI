@@ -50,14 +50,40 @@ class TFLiteScamClassifier(private val context: Context) {
             """(?:\+91[\-\s]?|91[\-\s]?|0)?[6-9](?:\d{9}|\d{4}[\-\s]\d{5}|\d{2}[\-\s]\d{3}[\-\s]\d{5})\b"""
         )
 
-        /**
-         * Preprocesses raw text according to IndicBERT training specifications:
-         * a) Normalize URLs to "URL" and Indian mobile numbers (+91/10 digits) to "PHONE"
-         * b) Convert text to lowercase and trim extra whitespace
-         */
+        fun removeEmojis(text: String): String {
+            if (text.isEmpty()) return text
+            val sb = java.lang.StringBuilder(text.length)
+            var i = 0
+            val len = text.length
+            while (i < len) {
+                val codePoint = text.codePointAt(i)
+                val charCount = java.lang.Character.charCount(codePoint)
+                val isEmoji = when {
+                    codePoint >= 0x10000 -> true
+                    codePoint in 0x2600..0x27BF -> true
+                    codePoint in 0x2300..0x23FF -> true
+                    codePoint in 0x2B50..0x2B55 -> true
+                    codePoint in 0xFE00..0xFE0F -> true
+                    codePoint == 0x200D || codePoint == 0x20E3 -> true
+                    codePoint in 0x3030..0x303D -> true
+                    codePoint == 0x3297 || codePoint == 0x3299 -> true
+                    else -> false
+                }
+                if (!isEmoji) {
+                    sb.appendCodePoint(codePoint)
+                } else {
+                    sb.append(' ')
+                }
+                i += charCount
+            }
+            return sb.toString()
+        }
+
         fun preprocessText(text: String): String {
-            var processed = URL_REGEX.replace(text, "URL")
+            val withoutEmojis = removeEmojis(text)
+            var processed = URL_REGEX.replace(withoutEmojis, "URL")
             processed = PHONE_REGEX.replace(processed, "PHONE")
+            processed = WHITESPACE_REGEX.replace(processed, " ")
             return processed.lowercase().trim()
         }
     }
@@ -348,6 +374,9 @@ class TFLiteScamClassifier(private val context: Context) {
 
         try {
             val maskedText = preprocessText(text)
+            if (maskedText.isEmpty()) {
+                return Pair("Safe", 0.0f)
+            }
             val tokenIds = tokenizePreprocessed(maskedText)
 
             inputIds.clear()

@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlashDeals Hub - Limited Time Exclusive Offer</title>
+    <style>
+        :root {
+            --primary: #e63946;
+            --dark: #1d3557;
+            --accent: #ffb703;
+            --bg: #f8f9fa;
+            --card-bg: #ffffff;
+            --text: #2b2d42;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+            padding-bottom: 50px;
+        }
+
+        /* Top Notification Bar */
+        .urgency-bar {
+            background-color: #d90429;
+            color: white;
+            text-align: center;
+            padding: 10px 16px;
+            font-weight: 700;
+            font-size: 14px;
+            letter-spacing: 0.5px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 2px 8px rgba(217, 4, 41, 0.3);
+        }
+
+        .countdown {
+            background: white;
+            color: #d90429;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 15px;
+            font-weight: bold;
+        }
+
+        /* Navigation Header */
+        header {
+            background: white;
+            padding: 14px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .brand-logo {
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--dark);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .badge-verified {
+            font-size: 11px;
+            background: #e0f2fe;
+            color: #0369a1;
+            padding: 4px 8px;
+            border-radius: 9999px;
+            font-weight: 600;
+        }
+
+        /* Main Container */
+        .container {
+            max-width: 600px;
+            margin: 20px auto;
+            padding: 0 16px;
+        }
+
+        /* Offer Card */
+        .product-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            border: 1px solid #edf2f7;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .discount-ribbon {
+            position: absolute;
+            top: 15px;
+            right: -35px;
+            background: #e63946;
+            color: white;
+            transform: rotate(45deg);
+            padding: 6px 40px;
+            font-size: 13px;
+            font-weight: 800;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        }
+
+        .product-image-container {
+            text-align: center;
+            padding: 20px;
+            background: #f1f5f9;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .product-svg {
+            width: 140px;
+            height: 180px;
+        }
+
+        .product-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--dark);
+            margin-bottom: 8px;
+        }
+
+        .rating {
+            color: #f59e0b;
+            font-size: 14px;
+            margin-bottom: 12px;
+        }
+
+        .price-section {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            margin-bottom: 16px;
+            background: #fef2f2;
+            padding: 12px;
+            border-radius: 8px;
+            border-left: 4px solid var(--primary);
+        }
+
+        .deal-price {
+            font-size: 28px;
+            font-weight: 800;
+            color: #b91c1c;
+        }
+
+        .original-price {
+            font-size: 16px;
+            color: #94a3b8;
+            text-decoration: line-through;
+        }
+
+        .discount-tag {
+            background: #ef4444;
+            color: white;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .stock-alert {
+            color: #b91c1c;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* Order Checkout Section */
+        .checkout-box {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            border: 1px solid #edf2f7;
+        }
+
+        .checkout-box h3 {
+            font-size: 17px;
+            color: var(--dark);
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .form-group {
+            margin-bottom: 14px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: 6px;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus {
+            border-color: #2563eb;
+        }
+
+        .order-summary {
+            background: #f8fafc;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }
+
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+            color: #64748b;
+        }
+
+        .summary-row.total {
+            border-top: 1px dashed #cbd5e1;
+            padding-top: 8px;
+            font-weight: 700;
+            color: var(--dark);
+            font-size: 16px;
+        }
+
+        /* Payment Trigger Buttons */
+        .pay-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            border: none;
+            padding: 14px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+            transition: transform 0.1s, opacity 0.2s;
+        }
+
+        .pay-btn:active {
+            transform: scale(0.98);
+        }
+
+        .upi-badge {
+            text-align: center;
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 10px;
+        }
+
+        .test-banner {
+            margin-top: 24px;
+            background: #fffbeb;
+            border: 1px dashed #f59e0b;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            color: #b45309;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Urgent Countdown Lure -->
+    <div class="urgency-bar">
+        <span>⚡ FLASH CLEARANCE SALE - 90% OFF TODAY ONLY!</span>
+        <span>Ends in:</span>
+        <span class="countdown" id="timer">04:59</span>
+    </div>
+
+    <!-- Header -->
+    <header>
+        <div class="brand-logo">FlashDeals Hub</div>
+        <span class="badge-verified">✓ Limited Special Allocation</span>
+    </header>
+
+    <div class="container">
+        <!-- Product Showcase -->
+        <div class="product-card">
+            <div class="discount-ribbon">90% OFF</div>
+            
+            <div class="product-image-container">
+                <svg class="product-svg" viewBox="0 0 100 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="5" y="5" width="90" height="170" rx="16" fill="#1e293b" stroke="#334155" stroke-width="4"/>
+                    <rect x="10" y="10" width="80" height="160" rx="12" fill="#0f172a"/>
+                    <!-- Screen Notch / Island -->
+                    <rect x="36" y="14" width="28" height="6" rx="3" fill="#000000"/>
+                    <!-- Camera lens shimmer -->
+                    <circle cx="50" cy="17" r="1.5" fill="#38bdf8"/>
+                    <!-- Product Graphic -->
+                    <circle cx="50" cy="90" r="28" fill="url(#grad)" opacity="0.8"/>
+                    <defs>
+                        <linearGradient id="grad" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+                            <stop stop-color="#38bdf8"/>
+                            <stop offset="1" stop-color="#818cf8"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+            </div>
+
+            <h1 class="product-title">Smartphone 16 Pro Max (256 GB) - Titanium Black</h1>
+            <div class="rating">★★★★★ (4.9 / 5.0) • 14,290 Verified Reviews</div>
+
+            <div class="price-section">
+                <span class="deal-price">₹ 9,999</span>
+                <span class="original-price">₹ 1,39,900</span>
+                <span class="discount-tag">92% OFF</span>
+            </div>
+
+            <div class="stock-alert">
+                ⚠️ Only 2 units left in stock at this clearance price!
+            </div>
+        </div>
+
+        <!-- Checkout / Payment Extraction Area (Triggers EdgeGuard WebShield) -->
+        <div class="checkout-box">
+            <h3>Billing & Shipping Checkout</h3>
+
+            <div class="form-group">
+                <label for="name">Full Name</label>
+                <input type="text" id="name" placeholder="Enter your full name" value="Rahul Sharma">
+            </div>
+
+            <div class="form-group">
+                <label for="phone">Mobile Number</label>
+                <input type="tel" id="phone" placeholder="10-digit mobile number" value="9876543210">
+            </div>
+
+            <div class="form-group">
+                <label for="address">Delivery / Billing Address</label>
+                <input type="text" id="address" placeholder="Flat, Building, Street, City" value="B-204, Green Heights, Andheri East">
+            </div>
+
+            <div class="form-group">
+                <label for="upi">Enter UPI ID / VPA for instant checkout</label>
+                <input type="text" id="upi" placeholder="yourname@okhdfcbank" value="rahul@upi">
+            </div>
+
+            <!-- Order Total Details -->
+            <div class="order-summary">
+                <div class="summary-row">
+                    <span>Item Subtotal:</span>
+                    <span>₹ 1,39,900</span>
+                </div>
+                <div class="summary-row">
+                    <span>Clearance Discount:</span>
+                    <span style="color: #10b981;">- ₹ 1,29,901</span>
+                </div>
+                <div class="summary-row">
+                    <span>Express Delivery:</span>
+                    <span style="color: #10b981;">FREE</span>
+                </div>
+                <div class="summary-row total">
+                    <span>Order Total:</span>
+                    <span>₹ 9,999</span>
+                </div>
+            </div>
+
+            <!-- Trigger Button -->
+            <button class="pay-btn" onclick="alert('Synthetic test demo button clicked. In EdgeGuard, this page triggers the WebShield Unverified Payment Page overlay.')">
+                Proceed to pay ₹ 9,999 (Pay with UPI)
+            </button>
+            <div class="upi-badge">🔒 Select payment method: Fast Pay with UPI or Pay with Card</div>
+        </div>
+
+        <!-- Safe Test Fixture Advisory Banner -->
+        <div class="test-banner">
+            🛡️ <strong>EdgeGuard AI Test Fixture</strong><br>
+            Contains extreme discount triggers ("90% OFF", "₹9,999"), fake stock urgency, and checkout heuristics ("Proceed to pay", "Order Total", "Enter UPI ID") designed to benchmark WebShield detection.
+        </div>
+    </div>
+
+    <!-- Countdown Timer Script -->
+    <script>
+        let timeLeft = 299; // 5 minutes
+        const timerElem = document.getElementById('timer');
+        setInterval(() => {
+            if (timeLeft <= 0) {
+                timeLeft = 300;
+            }
+            timeLeft--;
+            const mins = String(Math.floor(timeLeft / 60)).padStart(2, '0');
+            const secs = String(timeLeft % 60).padStart(2, '0');
+            timerElem.textContent = `${mins}:${secs}`;
+        }, 1000);
+    </script>
+</body>
+</html>

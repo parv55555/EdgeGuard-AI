@@ -102,6 +102,21 @@
             android:launchMode="singleTop"
             android:showWhenLocked="true"
             android:turnScreenOn="true" />
+
+        <activity
+            android:name="com.parv.safetexts.LinkInterceptorActivity"
+            android:exported="true"
+            android:theme="@style/TranslucentDialogTheme"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+            </intent-filter>
+        </activity>
     </application>
 
 </manifest>

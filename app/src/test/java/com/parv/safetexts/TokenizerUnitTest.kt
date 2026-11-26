@@ -35,6 +35,31 @@ class TokenizerUnitTest {
     }
 
     @Test
+    fun testEmojiRemovalAndIgnoring() {
+        val pureEmojis = "😀🎉🔥🚀❤️👍"
+        val cleanedPure = TFLiteScamClassifier.preprocessText(pureEmojis)
+        assertEquals("", cleanedPure)
+
+        val mixedEnglish = "Dear SBI user 🚨 your account ⚠️ is blocked! Win ₹10 Lakhs 🎉"
+        val cleanedMixed = TFLiteScamClassifier.preprocessText(mixedEnglish)
+        assertFalse(cleanedMixed.contains("🚨"))
+        assertFalse(cleanedMixed.contains("⚠️"))
+        assertFalse(cleanedMixed.contains("🎉"))
+        assertTrue(cleanedMixed.contains("dear sbi user"))
+        assertTrue(cleanedMixed.contains("your account"))
+        assertTrue(cleanedMixed.contains("is blocked"))
+        assertTrue(cleanedMixed.contains("win ₹10 lakhs"))
+
+        val mixedHindi = "बधाई हो! आप 10 लाख जीत गए 🎉 दावा करें 📱"
+        val cleanedHindi = TFLiteScamClassifier.preprocessText(mixedHindi)
+        assertFalse(cleanedHindi.contains("🎉"))
+        assertFalse(cleanedHindi.contains("📱"))
+        assertTrue(cleanedHindi.contains("बधाई हो"))
+        assertTrue(cleanedHindi.contains("जीत गए"))
+        assertTrue(cleanedHindi.contains("दावा करें"))
+    }
+
+    @Test
     fun testVocabTabSeparatedLoading() {
         val dummyVocab = """
             <pad>	0.000000

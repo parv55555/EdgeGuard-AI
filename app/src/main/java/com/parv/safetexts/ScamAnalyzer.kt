@@ -55,6 +55,10 @@ class ScamAnalyzer private constructor(private val context: Context) {
         Log.d("ScamAnalyzer", "Marked message hash $hash as FALSE_POSITIVE")
     }
 
+    fun classifyText(text: String): Pair<String, Float> {
+        return tfliteClassifier.classify(text)
+    }
+
     companion object {
         // Flag to toggle between Tier-1 Deterministic Keywords + Tier-2 Model vs Pure Model-Only Mode
         const val ENABLE_MESSAGE_KEYWORDS = true
@@ -132,9 +136,10 @@ class ScamAnalyzer private constructor(private val context: Context) {
         }
 
         fun checkFastDeterministicScam(text: String): Pair<String, Float>? {
-            val lower = text.lowercase()
+            val textWithoutEmojis = TFLiteScamClassifier.removeEmojis(text)
+            val lower = textWithoutEmojis.lowercase()
             // 0. Whitelist legitimate telecom operator service notifications
-            if (isTelecomServiceMessage(text)) {
+            if (isTelecomServiceMessage(textWithoutEmojis)) {
                 return Pair("Safe", 0.0f)
             }
             // 1. APK files
@@ -384,7 +389,8 @@ class ScamAnalyzer private constructor(private val context: Context) {
 
     fun analyzeMessage(message: MessageEntity, onDuplicateScam: ((MessageEntity) -> Unit)? = null, isApk: Boolean = false, isFakeCredit: Boolean = false, forceRealert: Boolean = false) {
         val senderLower = message.sender.lowercase().trim()
-        val contentLower = message.content.lowercase().trim()
+        val contentWithoutEmojis = TFLiteScamClassifier.removeEmojis(message.content)
+        val contentLower = contentWithoutEmojis.lowercase().trim()
 
         if (contentLower.isEmpty() || 
             senderLower in JUNK_UI_TEXTS || 
@@ -411,7 +417,10 @@ class ScamAnalyzer private constructor(private val context: Context) {
             return
         }
 
-        val cleanText = message.content.replace("\n", " ").replace(WHITESPACE_REGEX, " ").trim()
+        val cleanText = contentWithoutEmojis.replace("\n", " ").replace(WHITESPACE_REGEX, " ").trim()
+        if (cleanText.isEmpty()) {
+            return
+        }
         if (ENABLE_MESSAGE_KEYWORDS && !isApk && isTelecomServiceMessage(cleanText)) {
             Log.d("ScamAnalyzer", "Whitelisted legitimate telecom carrier notification: ${cleanText.take(30)}")
             return
