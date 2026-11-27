@@ -174,15 +174,27 @@ object ContactUtils {
         return digits >= 7 && title.matches(Regex("^[\\d\\s\\+\\-\\(\\)]+$"))
     }
 
-    /**
-     * Checks if an SMS sender is a TRAI DLT registered promotional sender ending with -P
-     * (e.g. ABS-XYSB-P, VM-FLPKRT-P, AD-SWIGGY-P).
-     * These promotional marketing senders are ignored per user preference.
-     */
     fun isPromotionalSmsSender(title: String): Boolean {
+        return isOfficialServiceOrPromoSmsSender(title)
+    }
+
+    fun isOfficialServiceOrPromoSmsSender(title: String): Boolean {
         if (title.isBlank()) return false
         val clean = title.trim().replace(BIDI_REGEX, "").replace(Regex("\\s+"), "")
         return clean.endsWith("-P", ignoreCase = true) ||
-               clean.matches(Regex("""(?i)^[A-Z0-9_\-]+-[P]$"""))
+               clean.endsWith("-S", ignoreCase = true) ||
+               clean.endsWith("-G", ignoreCase = true) ||
+               clean.matches(Regex("""(?i)^[A-Z0-9_\-]+-[PSG]$"""))
+    }
+
+    fun isTransactionalBankSmsSender(title: String): Boolean {
+        if (title.isBlank()) return false
+        val clean = title.trim().replace(BIDI_REGEX, "").replace(Regex("\\s+"), "")
+        return clean.endsWith("-T", ignoreCase = true) ||
+               clean.matches(Regex("""(?i)^[A-Z0-9_\-]+-[T]$"""))
+    }
+
+    fun isOfficialDltSmsSender(title: String): Boolean {
+        return isOfficialServiceOrPromoSmsSender(title) || isTransactionalBankSmsSender(title)
     }
 }

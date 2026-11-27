@@ -426,7 +426,7 @@ class ScamDetectionService : NotificationListenerService() {
         val isGroupSummary = (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0
         if (isGroupSummary) return
 
-        var title = extras.getString(Notification.EXTRA_TITLE) ?: "Unknown Sender"
+        var title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: "Unknown Sender"
         var text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
 
         // Extract accurate sender and text from MessagingStyle if available
@@ -507,10 +507,19 @@ class ScamDetectionService : NotificationListenerService() {
             return
         }
 
-        // Ignore promotional SMS from TRAI DLT registered promotional senders ending in -P (e.g. ABS-XYSB-P, VM-FLPKRT-P)
-        if (isSms && ContactUtils.isPromotionalSmsSender(title)) {
-            Log.d("ScamDetection", "Ignoring promotional SMS from sender: $title")
-            return
+        if (isSms) {
+            if (ContactUtils.isOfficialServiceOrPromoSmsSender(title)) {
+                Log.d("ScamDetection", "Ignoring official promotional/service SMS from sender: $title")
+                return
+            }
+            if (ContactUtils.isTransactionalBankSmsSender(title)) {
+                val hasOtpKeyword = text.contains(Regex("(?i)\\b(otp|code|verification|password)\\b"))
+                val hasNumberCode = text.contains(Regex("\\b\\d{4,8}\\b"))
+                if (hasOtpKeyword && hasNumberCode) {
+                    processSensitiveOtp(title)
+                }
+                return
+            }
         }
 
         // Intercept VoIP calls before system notification filtering
@@ -608,69 +617,13 @@ class ScamDetectionService : NotificationListenerService() {
 
         if (isSystemNotification(title, text)) return
 
-        // Check for OTPs before filtering out business senders
         val hasOtpKeyword = text.contains(Regex("(?i)\\b(otp|code|verification|password)\\b"))
         val hasNumberCode = text.contains(Regex("\\b\\d{4,8}\\b"))
-        
-        // Ensure it's a high-value OTP (Bank, Aadhar, PAN, Govt) to ignore delivery OTPs
         val highValueRegex = Regex("(?i)\\b(bank|aadhar|aadhaar|uidai|pan|gov|government|kyc|tax|sbi|hdfc|icici|axis|pnb|bob)\\b")
         val isHighValue = text.contains(highValueRegex) || title.contains(highValueRegex)
-        
-        val isOtp = hasOtpKeyword && hasNumberCode && isHighValue
-        
+        val isOtp = !isSms && hasOtpKeyword && hasNumberCode && isHighValue
         if (isOtp) {
-            Log.d("ScamDetection", "OTP detected from $title")
-            OtpManager.saveLastOtpTime(applicationContext)
-
-            // Alert the user that this is highly sensitive
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                android.widget.Toast.makeText(
-                    applicationContext,
-                    "Highly sensitive OTP. Do not tell it to anyone.",
-                    android.widget.Toast.LENGTH_LONG
-                ).show()
-            }
-
-            val tm = getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
-            val isTelecomCallActive = tm.callState == android.telephony.TelephonyManager.CALL_STATE_OFFHOOK
-            val activeIncomingNumber = OtpManager.getActiveIncomingNumber(applicationContext)
-            
-            val activeVoipNumber = OtpManager.getActiveVoipCallNumber(applicationContext)
-            val isVoipCallActive = activeVoipNumber != null
-
-            val isCallActive = isTelecomCallActive || isVoipCallActive
-
-            val isActiveTelecomUnknown = activeIncomingNumber != null && !ContactUtils.isContactExists(applicationContext, activeIncomingNumber)
-            val isActiveVoipUnknown = activeVoipNumber != null && !ContactUtils.isContactExists(applicationContext, activeVoipNumber)
-            val isActiveCallUnknown = isActiveTelecomUnknown || isActiveVoipUnknown
-
-            val lastUnknownTelecomCall = OtpManager.getLastUnknownCallTime(applicationContext)
-            val lastUnknownVoipCall = OtpManager.getLastUnknownVoipCallTime(applicationContext)
-            val lastUnknownCall = maxOf(lastUnknownTelecomCall, lastUnknownVoipCall)
-            
-            val timeSinceUnknownCall = System.currentTimeMillis() - lastUnknownCall
-            
-            // If currently on a call AND the active call is unknown (regardless of duration)
-            val isActiveScamCall = isCallActive && isActiveCallUnknown
-            
-            // If not currently on a call, but an unknown call was received within 1 hour
-            val isRecentScamCall = !isCallActive && (timeSinceUnknownCall <= 1L * 60 * 60 * 1000)
-
-            if (isActiveScamCall || isRecentScamCall) {
-                serviceScope.launch {
-                    val alert = MessageEntity(
-                        sender = "System Alert",
-                        content = "Warning triggered for potential OTP Theft. High-value OTP arrived during/after an unknown call.",
-                        appName = "EdgeGuard",
-                        analysisResult = "Alert",
-                        scamProbability = 1.0f
-                    )
-                    database.messageDao().insertMessage(alert)
-                    withContext(Dispatchers.Main) {
-                        OverlayUtils.showOtpWarningOverlay(applicationContext)
-                    }
-                }
-            }
+            processSensitiveOtp(title)
         }
 
 
@@ -728,6 +681,54 @@ class ScamDetectionService : NotificationListenerService() {
         }
     }
 
+
+    private fun processSensitiveOtp(title: String) {
+        Log.d("ScamDetection", "OTP detected from $title")
+        OtpManager.saveLastOtpTime(applicationContext)
+
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            android.widget.Toast.makeText(
+                applicationContext,
+                "Highly sensitive OTP. Do not tell it to anyone.",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
+
+        val tm = getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+        val isTelecomCallActive = tm.callState == android.telephony.TelephonyManager.CALL_STATE_OFFHOOK
+        val activeIncomingNumber = OtpManager.getActiveIncomingNumber(applicationContext)
+        val activeVoipNumber = OtpManager.getActiveVoipCallNumber(applicationContext)
+        val isVoipCallActive = activeVoipNumber != null
+        val isCallActive = isTelecomCallActive || isVoipCallActive
+
+        val isActiveTelecomUnknown = activeIncomingNumber != null && !ContactUtils.isContactExists(applicationContext, activeIncomingNumber)
+        val isActiveVoipUnknown = activeVoipNumber != null && !ContactUtils.isContactExists(applicationContext, activeVoipNumber)
+        val isActiveCallUnknown = isActiveTelecomUnknown || isActiveVoipUnknown
+
+        val lastUnknownTelecomCall = OtpManager.getLastUnknownCallTime(applicationContext)
+        val lastUnknownVoipCall = OtpManager.getLastUnknownVoipCallTime(applicationContext)
+        val lastUnknownCall = maxOf(lastUnknownTelecomCall, lastUnknownVoipCall)
+        val timeSinceUnknownCall = System.currentTimeMillis() - lastUnknownCall
+
+        val isActiveScamCall = isCallActive && isActiveCallUnknown
+        val isRecentScamCall = !isCallActive && (timeSinceUnknownCall <= 1L * 60 * 60 * 1000)
+
+        if (isActiveScamCall || isRecentScamCall) {
+            serviceScope.launch {
+                val alert = MessageEntity(
+                    sender = "System Alert",
+                    content = "Warning triggered for potential OTP Theft. High-value OTP arrived during/after an unknown call.",
+                    appName = "EdgeGuard",
+                    analysisResult = "Alert",
+                    scamProbability = 1.0f
+                )
+                database.messageDao().insertMessage(alert)
+                withContext(Dispatchers.Main) {
+                    OverlayUtils.showOtpWarningOverlay(applicationContext)
+                }
+            }
+        }
+    }
 
     private fun isSystemNotification(title: String, text: String): Boolean {
         val lowerText = text.lowercase(Locale.ROOT).trim()

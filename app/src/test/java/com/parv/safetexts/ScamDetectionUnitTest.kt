@@ -444,8 +444,8 @@ class ScamDetectionUnitTest {
         assertEquals("సురక్షితంగా ఉంది", AlertTranslationManager.getLooksSafeButton(AlertLanguage.TELUGU))
     }
 @Test
-    fun testPromotionalSmsSenderFiltering() {
-        val promotionalSenders = listOf(
+    fun testOfficialDltSmsSenderFiltering() {
+        val serviceAndPromotionalSenders = listOf(
             "ABS-XYSB-P",
             "VM-FLPKRT-P",
             "AD-SWIGGY-P",
@@ -454,25 +454,46 @@ class ScamDetectionUnitTest {
             "123456-P",
             "XY-ABC-P",
             "abs-xysb-p",
-            "AD-DEALS-P "
+            "AD-DEALS-P ",
+            "A-HXCSDS-S",
+            "VM-AIRTEL-S",
+            "AX-ZOMATO-S",
+            "HXCSDS-S",
+            "BW-JIOFIB-S",
+            "A-HXCSDS-S ",
+            "AD-GOVIND-G",
+            "VK-COWIN-G"
         )
-        for (sender in promotionalSenders) {
-            assertTrue("Sender should be identified as promotional: " + sender, ContactUtils.isPromotionalSmsSender(sender))
+        for (sender in serviceAndPromotionalSenders) {
+            assertTrue("Sender should be identified as service/promo: $sender", ContactUtils.isOfficialServiceOrPromoSmsSender(sender))
+            assertFalse("Sender should NOT be identified as transactional bank: $sender", ContactUtils.isTransactionalBankSmsSender(sender))
         }
 
-        val nonPromotionalSenders = listOf(
+        val transactionalBankSenders = listOf(
             "xyz-xyz-T",
             "AD-HDFCBK-T",
             "VK-SBIINB-T",
-            "HDFCBK",
-            "SBIINB",
-            "VM-AIRTEL-S",
+            "AX-ICICIB-T",
+            "HDFCBK-T",
+            "VM-SBIBNK-T",
+            "ad-hdfcbk-t"
+        )
+        for (sender in transactionalBankSenders) {
+            assertTrue("Sender should be identified as transactional bank: $sender", ContactUtils.isTransactionalBankSmsSender(sender))
+            assertFalse("Sender should NOT be identified as service/promo: $sender", ContactUtils.isOfficialServiceOrPromoSmsSender(sender))
+        }
+
+        val nonDltSenders = listOf(
             "+919876543210",
             "9876543210",
-            "Google"
+            "Google",
+            "Unknown Sender",
+            "HDFCBK",
+            "SBIINB"
         )
-        for (sender in nonPromotionalSenders) {
-            assertFalse("Sender should NOT be identified as promotional: " + sender, ContactUtils.isPromotionalSmsSender(sender))
+        for (sender in nonDltSenders) {
+            assertFalse("Sender should NOT be identified as service/promo: $sender", ContactUtils.isOfficialServiceOrPromoSmsSender(sender))
+            assertFalse("Sender should NOT be identified as transactional bank: $sender", ContactUtils.isTransactionalBankSmsSender(sender))
         }
     }
 }

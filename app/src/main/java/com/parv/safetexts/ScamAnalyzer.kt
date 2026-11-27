@@ -412,8 +412,8 @@ class ScamAnalyzer private constructor(private val context: Context) {
         }
 
         val isSms = message.appName.equals("SMS", ignoreCase = true)
-        if (isSms && ContactUtils.isPromotionalSmsSender(message.sender)) {
-            Log.d("ScamAnalyzer", "Skipping analysis for promotional SMS sender: ${message.sender}")
+        if (isSms && (ContactUtils.isOfficialServiceOrPromoSmsSender(message.sender) || ContactUtils.isTransactionalBankSmsSender(message.sender))) {
+            Log.d("ScamAnalyzer", "Skipping analysis for official SMS sender: ${message.sender}")
             return
         }
 
