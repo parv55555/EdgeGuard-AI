@@ -113,4 +113,19 @@ class LinkShieldUnitTest {
         val noMatch = urlRegex.find(plainTextMessage)?.value
         assertEquals(null, noMatch)
     }
+
+    @Test
+    fun testNormalWebsitesNotFlagged() {
+        val sites = listOf(
+            "https://kotlinlang.org" to "Kotlin is a programming language. Learn Kotlin for Android, Multiplatform and Server-Side.",
+            "https://stackoverflow.com/questions/12345" to "How to implement Custom Tabs in Android? Sign in to your account with GitHub. Click here to answer.",
+            "https://bbc.com/news/technology" to "BBC News: Global tech firms report quarterly earnings. More updates soon.",
+            "https://medium.com/@dev/guide" to "Comprehensive guide on modern software packages and IP address management.",
+            "https://cloudflare.com/pricing" to "Protect your website traffic from attacks. Pay monthly or annually with transparent pricing."
+        )
+        for ((url, text) in sites) {
+            val res = FraudDetectionEngine.analyze(url, text)
+            assertTrue("Expected safe for $url but got score ${res.score} reasons ${res.reasons}", res.score < 50)
+        }
+    }
 }

@@ -181,12 +181,12 @@ object LinkShieldScanner {
 
             cleanText = FraudDetectionEngine.cleanText(combinedText)
 
-            val fastScam = ScamAnalyzer.checkFastDeterministicScam(cleanText)
-            if (fastScam != null) {
+            val pageAnalysis = FraudDetectionEngine.analyze(finalUrl, cleanText)
+            if (pageAnalysis.score >= 50 && pageAnalysis.fraudCategory != "PAYMENT") {
                 return LinkShieldScanResult(
                     isScam = true,
-                    riskScore = (fastScam.second * 100).toInt(),
-                    reason = "Looks like a phishing or financial scam page",
+                    riskScore = pageAnalysis.score,
+                    reason = pageAnalysis.reasons.firstOrNull() ?: "Looks like a phishing or financial scam page",
                     targetUrl = finalUrl
                 )
             }
@@ -225,12 +225,12 @@ object LinkShieldScanner {
             val jsRenderedText = extractJsRenderedText(context, finalUrl)
             if (jsRenderedText.isNotBlank()) {
                 val cleanJsText = FraudDetectionEngine.cleanText(jsRenderedText)
-                val jsFastScam = ScamAnalyzer.checkFastDeterministicScam(cleanJsText)
-                if (jsFastScam != null) {
+                val jsPageAnalysis = FraudDetectionEngine.analyze(finalUrl, cleanJsText)
+                if (jsPageAnalysis.score >= 50 && jsPageAnalysis.fraudCategory != "PAYMENT") {
                     return LinkShieldScanResult(
                         isScam = true,
-                        riskScore = (jsFastScam.second * 100).toInt(),
-                        reason = "Looks like a phishing or financial scam page",
+                        riskScore = jsPageAnalysis.score,
+                        reason = jsPageAnalysis.reasons.firstOrNull() ?: "Looks like a phishing or financial scam page",
                         targetUrl = finalUrl
                     )
                 }
