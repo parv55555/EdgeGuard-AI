@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -130,7 +131,7 @@ class LinkInterceptorActivity : ComponentActivity() {
             val scanResult = withContext(Dispatchers.IO) {
                 LinkShieldScanner.scan(applicationContext, rawUrl)
             }
-            if (!scanResult.isScam) {
+            if (!scanResult.isScam && !scanResult.isPaymentAdvisory) {
                 SafeBrowserLauncher.openInRealBrowser(applicationContext, rawUrl)
                 finish()
             } else {
@@ -205,6 +206,17 @@ private fun WarningCard(
         }
     }
 
+    val isPayment = result.isPaymentAdvisory
+    val accentColor = if (isPayment) Color(0xFFF59E0B) else MaterialTheme.colorScheme.error
+    val iconBgColor = if (isPayment) Color(0xFFFEF3C7) else MaterialTheme.colorScheme.errorContainer
+    val titleText = if (isPayment) "Unknown website" else "This link looks like it's a scam"
+    val subtitleText = if (isPayment) {
+        "Unknown website, verify the originality of website before paying"
+    } else {
+        "EdgeGuard Link Shield detected suspicious characteristics before opening this destination."
+    }
+    val btnColor = if (isPayment) Color(0xFFD97706) else MaterialTheme.colorScheme.error
+
     Card(
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -220,28 +232,28 @@ private fun WarningCard(
                 modifier = Modifier
                     .size(56.dp)
                     .clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.colorScheme.errorContainer),
+                    .background(iconBgColor),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.Warning,
-                    contentDescription = "Warning",
-                    tint = MaterialTheme.colorScheme.error,
+                    contentDescription = if (isPayment) "Advisory" else "Warning",
+                    tint = accentColor,
                     modifier = Modifier.size(32.dp)
                 )
             }
 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "This link looks like it's a scam",
+                    text = titleText,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.error,
+                    color = accentColor,
                     textAlign = TextAlign.Center
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "EdgeGuard Link Shield detected suspicious characteristics before opening this destination.",
+                    text = subtitleText,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
@@ -276,7 +288,7 @@ private fun WarningCard(
             ) {
                 Button(
                     onClick = onGoBack,
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    colors = ButtonDefaults.buttonColors(containerColor = btnColor),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -285,7 +297,8 @@ private fun WarningCard(
                     Text(
                         text = "Go Back Safely",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
+                        fontSize = 15.sp,
+                        color = Color.White
                     )
                 }
 

@@ -53,7 +53,13 @@ import kotlinx.coroutines.withContext
 
 sealed interface ScanOverlayUiState {
     data class Loading(val isPage: Boolean, val targetSnippet: String) : ScanOverlayUiState
-    data class Flagged(val isPage: Boolean, val title: String, val indicator: String, val detail: String) : ScanOverlayUiState
+    data class Flagged(
+        val isPage: Boolean,
+        val title: String,
+        val indicator: String,
+        val detail: String,
+        val isPaymentAdvisory: Boolean = false
+    ) : ScanOverlayUiState
     data class Clean(val isPage: Boolean, val title: String, val detail: String, val targetSnippet: String) : ScanOverlayUiState
 }
 
@@ -130,12 +136,21 @@ class ScanOverlayActivity : ComponentActivity() {
                 LinkShieldScanner.scan(applicationContext, rawUrl)
             }
 
-            if (result.isScam) {
+            if (result.isPaymentAdvisory) {
+                uiState = ScanOverlayUiState.Flagged(
+                    isPage = true,
+                    title = "Unknown website",
+                    indicator = snippet,
+                    detail = "Unknown website, verify the originality of website before paying",
+                    isPaymentAdvisory = true
+                )
+            } else if (result.isScam) {
                 uiState = ScanOverlayUiState.Flagged(
                     isPage = true,
                     title = "This looks like it's a scam",
                     indicator = snippet,
-                    detail = result.reason
+                    detail = result.reason,
+                    isPaymentAdvisory = false
                 )
             } else {
                 uiState = ScanOverlayUiState.Clean(
@@ -275,6 +290,11 @@ private fun ScanOverlayContent(
             }
 
             is ScanOverlayUiState.Flagged -> {
+                val isAdvisory = state.isPaymentAdvisory
+                val themeColor = if (isAdvisory) Color(0xFFF59E0B) else Color(0xFFEF4444)
+                val cardBg = if (isAdvisory) Color(0xFF261E14) else Color(0xFF2B1416)
+                val btnColor = if (isAdvisory) Color(0xFFD97706) else Color(0xFFDC2626)
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -282,22 +302,22 @@ private fun ScanOverlayContent(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Warning,
-                        contentDescription = "Warning",
-                        tint = Color(0xFFEF4444),
+                        contentDescription = if (isAdvisory) "Advisory" else "Warning",
+                        tint = themeColor,
                         modifier = Modifier.size(28.dp)
                     )
                     Text(
                         text = state.title,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFFEF4444)
+                        color = themeColor
                     )
                 }
 
                 Surface(
                     shape = RoundedCornerShape(14.dp),
-                    color = Color(0xFF2B1416),
-                    border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.35f)),
+                    color = cardBg,
+                    border = BorderStroke(1.dp, themeColor.copy(alpha = 0.35f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -324,7 +344,7 @@ private fun ScanOverlayContent(
                 Button(
                     onClick = onClose,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFDC2626),
+                        containerColor = btnColor,
                         contentColor = Color.White
                     ),
                     shape = RoundedCornerShape(12.dp),

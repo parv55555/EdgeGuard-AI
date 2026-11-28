@@ -338,8 +338,8 @@ class ScamDetectionUnitTest {
 
         // Case 1: Unknown website with payment page
         val (paymentTitle, paymentBody) = AlertCardBuilder.resolveScamCopy("Unknown merchant checkout", isFakeWebsite = true, fraudCategory = "PAYMENT")
-        assertEquals("UNVERIFIED PAYMENT PAGE", paymentTitle)
-        assertTrue(paymentBody.contains("Check for the originality of the website before making any payment"))
+        assertEquals("UNKNOWN WEBSITE", paymentTitle)
+        assertTrue(paymentBody.contains("verify the originality of website before paying"))
 
         // Case 2: Similar domain to big company (Fake Website)
         val (fakeTitle, fakeBody) = AlertCardBuilder.resolveScamCopy("Impersonating big company", isFakeWebsite = true, fraudCategory = "BRAND_IMPERSONATION")
@@ -367,8 +367,8 @@ class ScamDetectionUnitTest {
             isFakeWebsite = true,
             fraudCategory = paymentScan.fraudCategory
         )
-        assertEquals("UNVERIFIED PAYMENT PAGE", c1Title)
-        assertTrue(c1Body.contains("Check for the originality of the website before making any payment"))
+        assertEquals("UNKNOWN WEBSITE", c1Title)
+        assertTrue(c1Body.contains("verify the originality of website before paying"))
 
         // Case 2: Similar domain name as a big company (Fake Website)
         val fakeBrandUrls = listOf(

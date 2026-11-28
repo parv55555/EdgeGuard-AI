@@ -777,7 +777,7 @@ object FraudDetectionEngine {
         if (hasPaymentInPath || hasPaymentKeywordInText) {
             if (detectedCategory != "BRAND_IMPERSONATION" && detectedCategory != "BANK" && detectedCategory != "GOVERNMENT") {
                 score = maxOf(score, 60)
-                reasons.add("Check for the originality of the website before making any payment. Unverified online payment page detected on '$cleanDomain'.")
+                reasons.add("Unknown website, verify the originality of website before paying. Check for the originality of the website before making any payment.")
                 detectedCategory = "PAYMENT"
             }
         }

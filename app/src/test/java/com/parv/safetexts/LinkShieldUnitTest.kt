@@ -128,4 +128,12 @@ class LinkShieldUnitTest {
             assertTrue("Expected safe for $url but got score ${res.score} reasons ${res.reasons}", res.score < 50)
         }
     }
+
+    @Test
+    fun testUnknownWebsitePaymentAdvisory() {
+        val unknownStorePayUrl = "https://custombakerytreats.in/checkout"
+        val analysis = FraudDetectionEngine.analyze(unknownStorePayUrl, "Order summary: Strawberry Cake. Total: Rs 550. Proceed to pay.")
+        assertEquals("PAYMENT", analysis.fraudCategory)
+        assertTrue(analysis.reasons.any { it.contains("verify the originality of website before paying") })
+    }
 }

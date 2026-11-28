@@ -23,7 +23,8 @@ data class LinkShieldScanResult(
     val riskScore: Int,
     val reason: String,
     val isDangerousDownload: Boolean = false,
-    val targetUrl: String = ""
+    val targetUrl: String = "",
+    val isPaymentAdvisory: Boolean = false
 )
 
 object LinkShieldScanner {
@@ -72,12 +73,23 @@ object LinkShieldScanner {
 
         val urlHeuristic = FraudDetectionEngine.analyze(rawUrl, "")
         if (urlHeuristic.score >= 50) {
-            return LinkShieldScanResult(
-                isScam = true,
-                riskScore = urlHeuristic.score,
-                reason = urlHeuristic.reasons.firstOrNull() ?: "Looks like an impersonated or high-risk link",
-                targetUrl = rawUrl
-            )
+            val isPayment = urlHeuristic.fraudCategory == "PAYMENT"
+            if (isPayment) {
+                return LinkShieldScanResult(
+                    isScam = false,
+                    riskScore = urlHeuristic.score,
+                    reason = "Unknown website, verify the originality of website before paying",
+                    targetUrl = rawUrl,
+                    isPaymentAdvisory = true
+                )
+            } else {
+                return LinkShieldScanResult(
+                    isScam = true,
+                    riskScore = urlHeuristic.score,
+                    reason = urlHeuristic.reasons.firstOrNull() ?: "Looks like an impersonated or high-risk link",
+                    targetUrl = rawUrl
+                )
+            }
         }
 
         var finalUrl = rawUrl
@@ -147,12 +159,23 @@ object LinkShieldScanner {
         if (finalUrl != rawUrl) {
             val redirectCheck = FraudDetectionEngine.analyze(finalUrl, "")
             if (redirectCheck.score >= 50) {
-                return LinkShieldScanResult(
-                    isScam = true,
-                    riskScore = redirectCheck.score,
-                    reason = redirectCheck.reasons.firstOrNull() ?: "Redirected to suspicious destination",
-                    targetUrl = finalUrl
-                )
+                val isPayment = redirectCheck.fraudCategory == "PAYMENT"
+                if (isPayment) {
+                    return LinkShieldScanResult(
+                        isScam = false,
+                        riskScore = redirectCheck.score,
+                        reason = "Unknown website, verify the originality of website before paying",
+                        targetUrl = finalUrl,
+                        isPaymentAdvisory = true
+                    )
+                } else {
+                    return LinkShieldScanResult(
+                        isScam = true,
+                        riskScore = redirectCheck.score,
+                        reason = redirectCheck.reasons.firstOrNull() ?: "Redirected to suspicious destination",
+                        targetUrl = finalUrl
+                    )
+                }
             }
         }
 
@@ -182,7 +205,16 @@ object LinkShieldScanner {
             cleanText = FraudDetectionEngine.cleanText(combinedText)
 
             val pageAnalysis = FraudDetectionEngine.analyze(finalUrl, cleanText)
-            if (pageAnalysis.score >= 50 && pageAnalysis.fraudCategory != "PAYMENT") {
+            if (pageAnalysis.fraudCategory == "PAYMENT") {
+                return LinkShieldScanResult(
+                    isScam = false,
+                    riskScore = pageAnalysis.score,
+                    reason = "Unknown website, verify the originality of website before paying",
+                    targetUrl = finalUrl,
+                    isPaymentAdvisory = true
+                )
+            }
+            if (pageAnalysis.score >= 50) {
                 return LinkShieldScanResult(
                     isScam = true,
                     riskScore = pageAnalysis.score,
@@ -226,7 +258,16 @@ object LinkShieldScanner {
             if (jsRenderedText.isNotBlank()) {
                 val cleanJsText = FraudDetectionEngine.cleanText(jsRenderedText)
                 val jsPageAnalysis = FraudDetectionEngine.analyze(finalUrl, cleanJsText)
-                if (jsPageAnalysis.score >= 50 && jsPageAnalysis.fraudCategory != "PAYMENT") {
+                if (jsPageAnalysis.fraudCategory == "PAYMENT") {
+                    return LinkShieldScanResult(
+                        isScam = false,
+                        riskScore = jsPageAnalysis.score,
+                        reason = "Unknown website, verify the originality of website before paying",
+                        targetUrl = finalUrl,
+                        isPaymentAdvisory = true
+                    )
+                }
+                if (jsPageAnalysis.score >= 50) {
                     return LinkShieldScanResult(
                         isScam = true,
                         riskScore = jsPageAnalysis.score,

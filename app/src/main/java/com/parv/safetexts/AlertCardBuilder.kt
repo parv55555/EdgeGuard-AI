@@ -39,8 +39,7 @@ object AlertCardBuilder {
             isFakeWebsite && fraudCategory == "GOVERNMENT" -> AlertTranslationManager.ScamType.GOVT_WEBSITE
             // #12 Counterfeit Bank WebShield
             isFakeWebsite && fraudCategory == "BANK" -> AlertTranslationManager.ScamType.BANK_PAGE
-            // Case 1: Unknown website with payment page
-            isFakeWebsite && (fraudCategory == "PAYMENT" || lower.contains("payment page") || lower.contains("originality of the website")) -> AlertTranslationManager.ScamType.UNVERIFIED_PAYMENT
+            fraudCategory == "PAYMENT" || (isFakeWebsite && (lower.contains("payment page") || lower.contains("originality of the website") || lower.contains("unknown website"))) -> AlertTranslationManager.ScamType.UNVERIFIED_PAYMENT
             // Case 2: Big company name / lookalike domain (Fake Website)
             isFakeWebsite && (fraudCategory == "BRAND_IMPERSONATION" || fraudCategory == "ECOMMERCE" || lower.contains("brand impersonation") || lower.contains("brand hijacking") || lower.contains("typosquatting") || lower.contains("fake website")) -> AlertTranslationManager.ScamType.FAKE_WEBSITE
             // #13 Brand Impersonation & Spoofed URLs / Browser spam fallback
@@ -212,12 +211,17 @@ object AlertCardBuilder {
             language = lang
         )
 
+        val isPaymentAdvisory = fraudCategory == "PAYMENT" || cardTitle.contains("UNKNOWN WEBSITE", ignoreCase = true) || cardTitle.contains("अज्ञात वेबसाइट")
+        val strokeColor = if (isPaymentAdvisory) Color.parseColor("#FFA000") else Color.parseColor("#FF5252")
+        val bgColor = if (isPaymentAdvisory) Color.parseColor("#FFFBEB") else Color.parseColor("#FFF0F0")
+        val titleColor = if (isPaymentAdvisory) Color.parseColor("#D97706") else Color.parseColor("#D32F2F")
+
         val cardLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FFF0F0"))
+                setColor(bgColor)
                 cornerRadius = dp(context, 16).toFloat()
-                setStroke(dp(context, 2), Color.parseColor("#FF5252"))
+                setStroke(dp(context, 2), strokeColor)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) elevation = dp(context, 8).toFloat()
             setPadding(dp(context, 18), dp(context, 14), dp(context, 18), dp(context, 14))
@@ -226,7 +230,7 @@ object AlertCardBuilder {
         val titleView = TextView(context).apply {
             text = cardTitle
             textSize = 17f
-            setTextColor(Color.parseColor("#D32F2F"))
+            setTextColor(titleColor)
             setTypeface(null, android.graphics.Typeface.BOLD)
             gravity = Gravity.CENTER
             setPadding(0, 0, 0, dp(context, 4))
@@ -264,7 +268,7 @@ object AlertCardBuilder {
             setTextColor(Color.WHITE)
             setTypeface(null, android.graphics.Typeface.BOLD)
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FF5252"))
+                setColor(if (isPaymentAdvisory) Color.parseColor("#D97706") else Color.parseColor("#FF5252"))
                 cornerRadius = dp(context, 10).toFloat()
             }
             setPadding(dp(context, 14), dp(context, 8), dp(context, 14), dp(context, 8))
