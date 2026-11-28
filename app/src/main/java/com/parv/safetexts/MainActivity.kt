@@ -12,6 +12,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.app.Activity
 import android.app.role.RoleManager
 import android.app.AppOpsManager
 import android.os.Build
@@ -128,6 +129,15 @@ fun PermissionsScreen(navController: NavController) {
     var isUsageStatsEnabled by remember {
         mutableStateOf(hasUsageStatsPermission(context))
     }
+    var isDefaultBrowser by remember {
+        mutableStateOf(SafeBrowserLauncher.isDefaultBrowser(context))
+    }
+
+    val defaultBrowserLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        isDefaultBrowser = SafeBrowserLauncher.isDefaultBrowser(context)
+    }
 
     val contactsPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -156,6 +166,7 @@ fun PermissionsScreen(navController: NavController) {
                 isOverlayPermissionGranted = Settings.canDrawOverlays(context)
                 isBatteryOptimized = pm.isIgnoringBatteryOptimizations(context.packageName)
                 isUsageStatsEnabled = hasUsageStatsPermission(context)
+                isDefaultBrowser = SafeBrowserLauncher.isDefaultBrowser(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -303,6 +314,34 @@ fun PermissionsScreen(navController: NavController) {
                             }
                         )
                     }
+                }
+            }
+
+            Text(
+                "Web & Link Protection",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.Start)
+            )
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    PermissionRow(
+                        title = "Default Browser (Link Shield)",
+                        description = "Intercepts and scans links offline before opening in your browser to block phishing and fake portals.",
+                        isGranted = isDefaultBrowser,
+                        onToggle = {
+                            val activity = context as? Activity
+                            if (activity != null) {
+                                SafeBrowserLauncher.requestDefaultBrowser(activity, defaultBrowserLauncher)
+                            }
+                        }
+                    )
                 }
             }
 

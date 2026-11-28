@@ -53,6 +53,8 @@ class LinkShieldUnitTest {
             <head>
                 <title>Amazon.in: Smartphone 16 Pro Max</title>
                 <meta name="description" content="Flash clearance 90% off iPhone" />
+                <meta property="og:title" content="Exclusive Deal" />
+                <meta property="og:description" content="Unbelievable discount" />
             </head>
             <body>
                 <h1>Smartphone 16 Pro Max</h1>

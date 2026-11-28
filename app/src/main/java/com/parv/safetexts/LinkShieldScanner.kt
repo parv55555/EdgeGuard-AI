@@ -156,11 +156,15 @@ object LinkShieldScanner {
             }
         }
 
+        var cleanText = ""
         if (htmlContent.isNotBlank()) {
             val doc = Jsoup.parse(htmlContent, finalUrl)
             val title = doc.title()
             val metaDescription = doc.select("meta[name=description]").attr("content")
+            val ogTitle = doc.select("meta[property=og:title], meta[name=og:title]").attr("content")
+            val ogDescription = doc.select("meta[property=og:description], meta[name=og:description]").attr("content")
             val headings = doc.select("h1, h2, h3").eachText().joinToString(" ")
+            val buttonLabels = doc.select("button, input[type=submit], input[type=button], a.button, a.btn").eachText().joinToString(" ")
             val bodyText = doc.body()?.text() ?: ""
             val forms = doc.select("form").size
             val passwordInputs = doc.select("input[type=password]").size
@@ -168,11 +172,14 @@ object LinkShieldScanner {
             val combinedText = buildString {
                 if (title.isNotBlank()) append(title).append(". ")
                 if (metaDescription.isNotBlank()) append(metaDescription).append(". ")
+                if (ogTitle.isNotBlank()) append(ogTitle).append(". ")
+                if (ogDescription.isNotBlank()) append(ogDescription).append(". ")
                 if (headings.isNotBlank()) append(headings).append(". ")
+                if (buttonLabels.isNotBlank()) append(buttonLabels).append(". ")
                 if (bodyText.isNotBlank()) append(bodyText)
             }
 
-            val cleanText = FraudDetectionEngine.cleanText(combinedText)
+            cleanText = FraudDetectionEngine.cleanText(combinedText)
 
             val fastScam = ScamAnalyzer.checkFastDeterministicScam(cleanText)
             if (fastScam != null) {
@@ -201,7 +208,7 @@ object LinkShieldScanner {
                 }
             }
 
-            if (cleanText.length > 50) {
+            if (cleanText.length >= 50) {
                 val (tfliteResult, tfliteProb) = ScamAnalyzer.getInstance(context).classifyText(cleanText)
                 if (tfliteResult == "Alert" || tfliteProb >= 0.70f) {
                     return LinkShieldScanResult(
@@ -214,7 +221,7 @@ object LinkShieldScanner {
             }
         }
 
-        if (isNetworkSuccess && htmlContent.length < 1024) {
+        if (isNetworkSuccess && (cleanText.length < 50 || htmlContent.length < 1024)) {
             val jsRenderedText = extractJsRenderedText(context, finalUrl)
             if (jsRenderedText.isNotBlank()) {
                 val cleanJsText = FraudDetectionEngine.cleanText(jsRenderedText)
