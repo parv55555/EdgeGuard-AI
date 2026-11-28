@@ -844,6 +844,14 @@ object FraudDetectionEngine {
         return parseSingleUrlToken(text) != null
     }
 
+    fun cleanText(text: String): String {
+        return text.replace(Regex("[\\p{So}\\p{Cn}]|[\\uD83C-\\uDBFF\\uDC00-\\uDFFF]+"), " ")
+            .replace('\n', ' ')
+            .replace('\r', ' ')
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
     /**
      * Extracts a valid URL from raw text or talkback descriptions (e.g., "Search or type URL, amaz0n-sale.shop").
      * Returns null if no valid navigated URL is present.

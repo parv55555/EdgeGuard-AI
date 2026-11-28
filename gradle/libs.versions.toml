@@ -12,6 +12,9 @@ room = "2.6.1"
 navigation = "2.8.3"
 pytorch = "2.1.0"
 ksp = "2.0.21-1.0.25"
+browser = "1.8.0"
+okhttp = "4.12.0"
+jsoup = "1.18.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -36,6 +39,9 @@ androidx-room-compiler = { group = "androidx.room", name = "room-compiler", vers
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigation" }
 pytorch-android-lite = { group = "org.pytorch", name = "pytorch_android_lite", version.ref = "pytorch" }
 pytorch-android-torchvision-lite = { group = "org.pytorch", name = "pytorch_android_torchvision_lite", version.ref = "pytorch" }
+androidx-browser = { group = "androidx.browser", name = "browser", version.ref = "browser" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
