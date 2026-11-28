@@ -485,6 +485,10 @@ class ScamDetectionService : NotificationListenerService() {
         
         // Skip official WhatsApp service account and saved contacts as requested.
         val isWhatsApp = packageName.contains("whatsapp")
+        if (isWhatsApp && isIgnoredWhatsAppNotification(title, text, sbn)) {
+            Log.d("ScamDetection", "Ignoring WhatsApp non-chat notification: $title - $text")
+            return
+        }
         val isOfficialWhatsApp = isWhatsApp && title.lowercase() == "whatsapp"
         val isVerifiedCompany = isWhatsApp && ContactUtils.isWhatsAppCompanyAccount(title)
         val isSavedContact = ContactUtils.isContactExists(applicationContext, title)
@@ -770,6 +774,91 @@ class ScamDetectionService : NotificationListenerService() {
             "won an iphone", "spin the wheel", "claim your prize", "lottery winner", "hot girls", "dating", "lucky draw", "single ladies"
         )
         return spamKeywords.any { lowerContent.contains(it) }
+    }
+
+    fun isIgnoredWhatsAppNotification(title: String, text: String, sbn: StatusBarNotification): Boolean {
+        val isOngoing = (sbn.notification.flags and Notification.FLAG_ONGOING_EVENT) != 0
+        return isIgnoredWhatsAppNotification(title, text, isOngoing, sbn.notification.category)
+    }
+
+    companion object {
+        fun isIgnoredWhatsAppNotification(title: String, text: String, isOngoing: Boolean = false, category: String? = null): Boolean {
+            val lowerText = text.lowercase(Locale.ROOT).trim()
+            val lowerTitle = title.lowercase(Locale.ROOT).trim()
+
+            if (lowerTitle == "whatsapp" && (lowerText.isEmpty() || lowerText.contains("checking for new messages") || lowerText.matches(Regex("^\\d+\\s+new\\s+messages?.*")))) {
+                return true
+            }
+
+            if (category == Notification.CATEGORY_MISSED_CALL) {
+                return true
+            }
+
+            val ongoingCallPhrases = listOf(
+                "ongoing voice call",
+                "ongoing video call",
+                "ongoing call",
+                "call in progress",
+                "voice call going on",
+                "video call going on",
+                "call going on",
+                "tap to return to call",
+                "return to call",
+                "in call"
+            )
+            if (isOngoing || ongoingCallPhrases.any { lowerText.contains(it) || lowerTitle.contains(it) }) {
+                return true
+            }
+
+            val missedCallPhrases = listOf(
+                "missed voice call",
+                "missed video call",
+                "missed call",
+                "missed group call",
+                "call missed"
+            )
+            if (missedCallPhrases.any { lowerText.contains(it) || lowerTitle.contains(it) }) {
+                return true
+            }
+
+            val reactionAndLikePhrases = listOf(
+                "reacted to",
+                "reacted with",
+                "liked your status",
+                "liked your message",
+                "liked a message",
+                "liked your",
+                "liked message",
+                "संदेश पर प्रतिक्रिया दी",
+                "स्थिति पसंद की",
+                "मेसेज लाइक किया"
+            )
+            if (reactionAndLikePhrases.any { lowerText.contains(it) }) {
+                return true
+            }
+
+            val backgroundSyncPhrases = listOf(
+                "checking for new messages",
+                "searching for new messages",
+                "you may have new messages",
+                "waiting for this message",
+                "backup in progress",
+                "backing up messages",
+                "restoring chat history",
+                "whatsapp web is currently active",
+                "whatsapp web is active",
+                "whatsapp desktop is active"
+            )
+            if (backgroundSyncPhrases.any { lowerText.contains(it) || lowerTitle.contains(it) }) {
+                return true
+            }
+
+            if (lowerText.matches(Regex("^\\d+\\s+new\\s+messages?.*"))) {
+                return true
+            }
+
+            return false
+        }
     }
 }
 

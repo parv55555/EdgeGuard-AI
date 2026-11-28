@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fuzzy Logic & Syādvāda — Interactive Project Booth</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --teal: #0d9488;
+      --amber: #f59e0b;
+      --rose: #f43f5e;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text-main);
+      line-height: 1.5;
+      padding: 24px;
+    }
+    header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 14px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #a5b4fc;
+      background: rgba(99, 102, 241, 0.2);
+      border: 1px solid rgba(99, 102, 241, 0.4);
+      border-radius: 999px;
+      margin-bottom: 8px;
+    }
+    h1 { font-size: 2.2rem; margin-bottom: 6px; }
+    p.lead { color: var(--text-muted); font-size: 1.05rem; }
+    
+    .nav-tabs {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .tab-btn {
+      padding: 10px 20px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .tab-btn.active {
+      color: #fff;
+      background: var(--primary);
+      border-color: var(--primary);
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 900px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    }
+    .card h3 {
+      font-size: 1.25rem;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .control-group {
+      margin-bottom: 16px;
+    }
+    .control-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.9rem;
+      margin-bottom: 6px;
+      color: var(--text-muted);
+    }
+    .control-label span.val {
+      color: #fff;
+      font-weight: 700;
+    }
+    input[type="range"] {
+      width: 100%;
+      height: 6px;
+      border-radius: 4px;
+      background: #334155;
+      outline: none;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+    .chart-container {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 12px;
+      margin-top: 14px;
+    }
+    svg {
+      width: 100%;
+      height: 220px;
+    }
+    .membership-pills {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .pill-stat {
+      flex: 1;
+      padding: 10px;
+      border-radius: 8px;
+      text-align: center;
+      background: #0f172a;
+      border: 1px solid #334155;
+    }
+    .pill-stat .name { font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); }
+    .pill-stat .num { font-size: 1.3rem; font-weight: 800; }
+
+    /* Syadvada accordion */
+    .syad-item {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      transition: border 0.2s;
+    }
+    .syad-item:hover { border-color: var(--amber); }
+    .syad-header {
+      display: flex;
+      justify-content: space-between;
+      font-weight: 700;
+      color: var(--amber);
+    }
+    .syad-desc {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="badge">INTERACTIVE EXHIBITION DEMO & BOOTH COMPANION</div>
+    <h1>Fuzzy Logic & Syādvāda (स्याद्वाद)</h1>
+    <p class="lead">Explore continuous membership curves, conditional truth, and practical fuzzy engineering.</p>
+  </header>
+
+  <div class="nav-tabs">
+    <button class="tab-btn active" onclick="switchTab('tab-visitor')">1. Visitor Activity: "The Human Fuzzy Set"</button>
+    <button class="tab-btn" onclick="switchTab('tab-sim')">2. Working Model: Fuzzy Washing Machine</button>
+    <button class="tab-btn" onclick="switchTab('tab-syad')">3. Philosophy: Syādvāda (7-fold Predication)</button>
+  </div>
+
+  <!-- TAB 1: VISITOR ACTIVITY -->
+  <div id="tab-visitor" class="tab-content active">
+    <div class="grid-2">
+      <div class="card">
+        <h3><span style="color:var(--rose);">●</span> Test Your Perception (Visitor Slider)</h3>
+        <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:16px;">
+          Move the slider to a height and watch how your status smoothly transitions between <strong>Short</strong>, <strong>Average</strong>, and <strong>Tall</strong> simultaneously.
+        </p>
+
+        <div class="control-group">
+          <div class="control-label">
+            <span>Select Height:</span>
+            <span class="val" id="heightVal">5'10" (178 cm)</span>
+          </div>
+          <input type="range" id="heightSlider" min="54" max="82" value="70" step="0.5" oninput="updateHeightDemo(this.value)">
+        </div>
+
+        <div class="chart-container">
+          <svg id="fuzzyChart" viewBox="0 0 500 200">
+            <!-- Grid lines -->
+            <line x1="40" y1="20" x2="480" y2="20" stroke="#1e293b" stroke-dasharray="4"/>
+            <line x1="40" y1="95" x2="480" y2="95" stroke="#1e293b" stroke-dasharray="4"/>
+            <line x1="40" y1="170" x2="480" y2="170" stroke="#334155"/>
+            <line x1="40" y1="20" x2="40" y2="170" stroke="#334155"/>
+
+            <!-- Axis labels -->
+            <text x="15" y="25" fill="#64748b" font-size="11">1.0</text>
+            <text x="15" y="100" fill="#64748b" font-size="11">0.5</text>
+            <text x="15" y="175" fill="#64748b" font-size="11">0.0</text>
+            <text x="50" y="190" fill="#64748b" font-size="11">4'6"</text>
+            <text x="250" y="190" fill="#64748b" font-size="11">5'9"</text>
+            <text x="440" y="190" fill="#64748b" font-size="11">7'0"</text>
+
+            <!-- Short curve (Blue) -->
+            <polygon points="40,20 160,20 240,170 40,170" fill="rgba(59, 130, 246, 0.2)" stroke="#3b82f6" stroke-width="2"/>
+            <!-- Average curve (Green) -->
+            <polygon points="180,170 250,20 270,20 340,170" fill="rgba(16, 185, 129, 0.2)" stroke="#10b981" stroke-width="2"/>
+            <!-- Tall curve (Orange) -->
+            <polygon points="280,170 360,20 480,20 480,170" fill="rgba(249, 115, 22, 0.2)" stroke="#f97316" stroke-width="2"/>
+
+            <!-- Cursor line -->
+            <line id="cursorLine" x1="285" y1="10" x2="285" y2="170" stroke="#f43f5e" stroke-width="2.5" stroke-dasharray="2"/>
+            <circle id="cursorPoint" cx="285" cy="170" r="5" fill="#f43f5e"/>
+          </svg>
+        </div>
+
+        <div class="membership-pills">
+          <div class="pill-stat">
+            <div class="name" style="color:#3b82f6;">μ Short</div>
+            <div class="num" id="muShort" style="color:#3b82f6;">0.00</div>
+          </div>
+          <div class="pill-stat">
+            <div class="name" style="color:#10b981;">μ Average</div>
+            <div class="num" id="muAvg" style="color:#10b981;">0.43</div>
+          </div>
+          <div class="pill-stat">
+            <div class="name" style="color:#f97316;">μ Tall</div>
+            <div class="num" id="muTall" style="color:#f97316;">0.57</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3><span style="color:var(--primary);">ℹ</span> Classical vs. Fuzzy Comparison</h3>
+        <table style="width:100%; border-collapse:collapse; margin-top:12px; font-size:0.92rem;">
+          <tr style="border-bottom:1px solid #334155; text-align:left;">
+            <th style="padding:8px 4px; color:var(--text-muted);">Aspect</th>
+            <th style="padding:8px 4px; color:var(--rose);">Classical (Binary)</th>
+            <th style="padding:8px 4px; color:var(--teal);">Fuzzy Logic</th>
+          </tr>
+          <tr style="border-bottom:1px solid #1e293b;">
+            <td style="padding:10px 4px; font-weight:600;">Logic Rule</td>
+            <td style="padding:10px 4px; color:#fca5a5;">Strict 0 (False) or 1 (True)</td>
+            <td style="padding:10px 4px; color:#99f6e4;">Continuous range [0.0, 1.0]</td>
+          </tr>
+          <tr style="border-bottom:1px solid #1e293b;">
+            <td style="padding:10px 4px; font-weight:600;">At 5'11"</td>
+            <td style="padding:10px 4px;">If cutoff is 6'0", then 0 (Not tall)</td>
+            <td style="padding:10px 4px;">0.85 degree of "Tall"</td>
+          </tr>
+          <tr style="border-bottom:1px solid #1e293b;">
+            <td style="padding:10px 4px; font-weight:600;">At 28°C</td>
+            <td style="padding:10px 4px;">Forced into Hot or Cold</td>
+            <td style="padding:10px 4px;">0.70 Warm and 0.30 Hot</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 4px; font-weight:600;">Real World</td>
+            <td style="padding:10px 4px; color:#fca5a5;">Creates jarring digital steps</td>
+            <td style="padding:10px 4px; color:#99f6e4;">Models natural human intuition</td>
+          </tr>
+        </table>
+        <div style="margin-top:20px; padding:12px; background:#0f172a; border-left:4px solid var(--amber); border-radius:4px; font-size:0.88rem; color:#cbd5e1;">
+          <strong>Syādvāda Insight:</strong> When two people disagree whether 5'10" is tall, neither is lying! A 5'2" person says "Tall" (*Syād-asti*); a 6'5" basketball player says "Not Tall" (*Syān-nāsti*). Both express legitimate partial perspectives.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 2: FUZZY WASHING MACHINE SIMULATOR -->
+  <div id="tab-sim" class="tab-content">
+    <div class="grid-2">
+      <div class="card">
+        <h3><span style="color:var(--teal);">⚙</span> Fuzzy Washing Machine Controller</h3>
+        <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:16px;">
+          Adjust the load sensors. Watch how Mamdani fuzzy inference continuously computes the ideal wash cycle.
+        </p>
+
+        <div class="control-group">
+          <div class="control-label">
+            <span>Dirtiness Level (Optical Turbidity Sensor):</span>
+            <span class="val" id="dirtVal">55% (Medium Dirty)</span>
+          </div>
+          <input type="range" id="dirtSlider" min="0" max="100" value="55" oninput="updateWasherDemo()">
+        </div>
+
+        <div class="control-group">
+          <div class="control-label">
+            <span>Fabric Weight & Sensitivity (Load Sensor):</span>
+            <span class="val" id="fabricVal">60% (Cotton / Regular)</span>
+          </div>
+          <input type="range" id="fabricSlider" min="0" max="100" value="60" oninput="updateWasherDemo()">
+        </div>
+
+        <div class="membership-pills" style="margin-top:20px;">
+          <div class="pill-stat" style="border-color:var(--teal);">
+            <div class="name" style="color:var(--teal);">Calculated Wash Time</div>
+            <div class="num" id="washTimeVal" style="color:var(--teal);">38.5 min</div>
+          </div>
+          <div class="pill-stat" style="border-color:var(--primary);">
+            <div class="name" style="color:var(--primary);">Agitation Power</div>
+            <div class="num" id="agitationVal" style="color:var(--primary);">Medium-High</div>
+          </div>
+          <div class="pill-stat" style="border-color:var(--amber);">
+            <div class="name" style="color:var(--amber);">Water Savings</div>
+            <div class="num" id="waterSavingVal" style="color:var(--amber);">28% Saved</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3><span style="color:var(--amber);">📋</span> Active Fuzzy Rules</h3>
+        <ul style="list-style:none; font-size:0.9rem; color:var(--text-muted); margin-top:12px;">
+          <li style="padding:8px; margin-bottom:6px; background:#0f172a; border-radius:6px; border-left:3px solid #3b82f6;">
+            <strong>Rule 1:</strong> IF Dirt is <span id="r1_d" style="color:#fff;">Medium</span> AND Fabric is <span id="r1_f" style="color:#fff;">Cotton</span> THEN Wash Time is <strong style="color:var(--teal);">Moderate (~35 min)</strong>
+          </li>
+          <li style="padding:8px; margin-bottom:6px; background:#0f172a; border-radius:6px; border-left:3px solid #f97316;">
+            <strong>Rule 2:</strong> IF Dirt is <span id="r2_d" style="color:#fff;">Heavy</span> AND Fabric is <span id="r2_f" style="color:#fff;">Heavy</span> THEN Wash Time is <strong style="color:var(--rose);">Long (~60 min)</strong>
+          </li>
+          <li style="padding:8px; margin-bottom:6px; background:#0f172a; border-radius:6px; border-left:3px solid #10b981;">
+            <strong>Rule 3:</strong> IF Dirt is <span id="r3_d" style="color:#fff;">Light</span> AND Fabric is <span id="r3_f" style="color:#fff;">Delicate</span> THEN Wash Time is <strong style="color:#a5b4fc;">Gentle (~15 min)</strong>
+          </li>
+        </ul>
+        <p style="font-size:0.85rem; color:#94a3b8; margin-top:14px;">
+          <em>Unlike standard washers with only 3 rigid button settings, the fuzzy microcontroller evaluates all rules simultaneously using defuzzification (center-of-gravity method).</em>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 3: SYĀDVĀDA 7-FOLD PREDICATION -->
+  <div id="tab-syad" class="tab-content">
+    <div class="grid-2">
+      <div class="card">
+        <h3><span style="color:var(--amber);">🐘</span> The 7-Fold Predication (Saptabhaṅgī)</h3>
+        <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:16px;">
+          Formalized in Jain epistemology over 2,500 years ago. Click on each predication to reveal its logical mapping:
+        </p>
+
+        <div class="syad-item" onclick="showSyadDetail(1)">
+          <div class="syad-header">1. Syād-asti (स्यादस्ति) <span>[Truth = 1 under Context C1]</span></div>
+          <div class="syad-desc">In some respect, it is. (e.g. A clay pot exists in terms of its clay material and present time).</div>
+        </div>
+
+        <div class="syad-item" onclick="showSyadDetail(2)">
+          <div class="syad-header">2. Syān-nāsti (स्यान्नास्ति) <span>[Truth = 0 under Context C2]</span></div>
+          <div class="syad-desc">In some respect, it is not. (e.g. The pot does not exist in terms of gold or in another location).</div>
+        </div>
+
+        <div class="syad-item" onclick="showSyadDetail(3)">
+          <div class="syad-header">3. Syād-asti-nāsti (स्यादस्ति नास्ति च) <span>[Sequential Perspective]</span></div>
+          <div class="syad-desc">In some respect, it both is and is not consecutively.</div>
+        </div>
+
+        <div class="syad-item" onclick="showSyadDetail(4)">
+          <div class="syad-header">4. Syād-avaktavyaḥ (स्यादवक्तव्यः) <span>[Indeterminate / Fuzzy State]</span></div>
+          <div class="syad-desc">In some respect, it is inexpressible. Simultaneous positive and negative attributes exceed binary vocabulary.</div>
+        </div>
+
+        <div class="syad-item" onclick="showSyadDetail(5)">
+          <div class="syad-header">5. Syād-asti-avaktavyaḥ (स्यादस्ति चावक्तव्यश्च) <span>[Affirmation + Fuzzy]</span></div>
+          <div class="syad-desc">In some respect, it is, and is inexpressible.</div>
+        </div>
+
+        <div class="syad-item" onclick="showSyadDetail(6)">
+          <div class="syad-header">6. Syān-nāsti-avaktavyaḥ (स्यान्नास्ति चावक्तव्यश्च) <span>[Negation + Fuzzy]</span></div>
+          <div class="syad-desc">In some respect, it is not, and is inexpressible.</div>
+        </div>
+
+        <div class="syad-item" onclick="showSyadDetail(7)">
+          <div class="syad-header">7. Syād-asti-nāsti-avaktavyaḥ (स्यादस्ति नास्ति चावक्तव्यश्च) <span>[Total Synthesis]</span></div>
+          <div class="syad-desc">In some respect, it is, is not, and is inexpressible all together.</div>
+        </div>
+      </div>
+
+      <div class="card" id="syadExplBox">
+        <h3><span style="color:var(--primary);">💡</span> Epistemological Synthesis</h3>
+        <div style="background:#0f172a; border-radius:8px; padding:16px; margin-top:12px;">
+          <h4 id="syadSelTitle" style="color:var(--amber); margin-bottom:8px;">Anekāntavāda: Non-Absolutism</h4>
+          <p id="syadSelBody" style="color:var(--text-muted); font-size:0.95rem; line-height:1.6;">
+            The central tenet of Jain epistemology is that no single human observation possesses total reality. Just as 6 blind scholars perceived different parts of the same elephant (fan, pillar, rope, spear), every scientific measurement is valid only relative to its frame of reference.<br><br>
+            Modern AI, probabilistic neural networks, and fuzzy controllers are rediscovering what ancient Indian logicians codified millennia ago: <strong>truth is multi-faceted, continuous, and perspective-bound.</strong>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      event.target.classList.add('active');
+    }
+
+    // Height calculations
+    function updateHeightDemo(inches) {
+      const feet = Math.floor(inches / 12);
+      const remInches = Math.round(inches % 12);
+      const cm = Math.round(inches * 2.54);
+      document.getElementById('heightVal').innerText = `${feet}'${remInches}" (${cm} cm)`;
+
+      // Map inches (54 to 84) to SVG x-coordinates (40 to 480)
+      const minX = 40, maxX = 480;
+      const minIn = 54, maxIn = 84;
+      const x = minX + ((inches - minIn) / (maxIn - minIn)) * (maxX - minX);
+
+      document.getElementById('cursorLine').setAttribute('x1', x);
+      document.getElementById('cursorLine').setAttribute('x2', x);
+      document.getElementById('cursorPoint').setAttribute('cx', x);
+
+      // Membership functions
+      // Short: 1 at 54-62, down to 0 at 70
+      let muS = 0;
+      if (inches <= 62) muS = 1;
+      else if (inches < 70) muS = (70 - inches) / 8;
+      else muS = 0;
+
+      // Average: 0 at 64, peak at 69, 0 at 75
+      let muA = 0;
+      if (inches >= 64 && inches <= 69) muA = (inches - 64) / 5;
+      else if (inches > 69 && inches <= 75) muA = (75 - inches) / 6;
+      else muA = 0;
+
+      // Tall: 0 at 71, reaches 1 at 78
+      let muT = 0;
+      if (inches <= 71) muT = 0;
+      else if (inches < 78) muT = (inches - 71) / 7;
+      else muT = 1;
+
+      document.getElementById('muShort').innerText = muS.toFixed(2);
+      document.getElementById('muAvg').innerText = muA.toFixed(2);
+      document.getElementById('muTall').innerText = muT.toFixed(2);
+    }
+
+    // Washer simulator calculations
+    function updateWasherDemo() {
+      const dirt = parseFloat(document.getElementById('dirtSlider').value);
+      const fabric = parseFloat(document.getElementById('fabricSlider').value);
+
+      document.getElementById('dirtVal').innerText = `${dirt}% (${dirt < 35 ? 'Light' : dirt < 70 ? 'Medium' : 'Heavy'} Dirt)`;
+      document.getElementById('fabricVal').innerText = `${fabric}% (${fabric < 35 ? 'Delicate' : fabric < 70 ? 'Cotton' : 'Heavy Denim'})`;
+
+      // Mamdani fuzzy aggregation approximation
+      const washTime = 15 + (dirt * 0.35) + (fabric * 0.25);
+      document.getElementById('washTimeVal').innerText = `${washTime.toFixed(1)} min`;
+
+      let agitation = "Low";
+      if (fabric > 40 && dirt > 40) agitation = "Medium";
+      if (fabric > 65 || dirt > 75) agitation = "Strong";
+      document.getElementById('agitationVal').innerText = agitation;
+
+      const waterSaved = Math.max(10, Math.round(45 - (dirt * 0.2 + fabric * 0.15)));
+      document.getElementById('waterSavingVal').innerText = `${waterSaved}% Saved`;
+    }
+
+    const syadData = {
+      1: { title: "1. Syād-asti (In some respect, it is)", text: "Affirmation relative to intrinsic essence (Dravya), location (Kshetra), time (Kāla), and condition (Bhāva). A gold ring exists as gold in this room right now." },
+      2: { title: "2. Syān-nāsti (In some respect, it is not)", text: "Negation relative to foreign matter or another context. The gold ring does NOT exist as silver, nor does it exist in the next room." },
+      3: { title: "3. Syād-asti-nāsti (In some respect, it is and is not)", text: "Sequential integration of perspectives. When viewed successively, an entity displays both being and non-being depending on the viewpoint taken." },
+      4: { title: "4. Syād-avaktavyaḥ (In some respect, it is inexpressible)", text: "The primary fuzzy state! When one attempts to assert existence and non-existence at the exact same instant, binary verbal language breaks down." },
+      5: { title: "5. Syād-asti-avaktavyaḥ", text: "Combining positive presence with simultaneous inexpressibility. It exists in its form, yet its total instantaneous reality is beyond speech." },
+      6: { title: "6. Syān-nāsti-avaktavyaḥ", text: "Combining negation with simultaneous inexpressibility." },
+      7: { title: "7. Syād-asti-nāsti-avaktavyaḥ", text: "The comprehensive 7th synthesis acknowledging affirmation, negation, and linguistic boundary all at once." }
+    };
+
+    function showSyadDetail(id) {
+      document.getElementById('syadSelTitle').innerText = syadData[id].title;
+      document.getElementById('syadSelBody').innerText = syadData[id].text;
+    }
+
+    // Initialize
+    updateHeightDemo(70);
+    updateWasherDemo();
+  </script>
+</body>
+</html>
+

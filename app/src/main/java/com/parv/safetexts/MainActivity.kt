@@ -105,8 +105,6 @@ fun PermissionsScreen(navController: NavController) {
     val context = LocalContext.current
     val sharedPref = remember { context.getSharedPreferences("safetexts_prefs", Context.MODE_PRIVATE) }
     
-    // State for permissions
-    var isAccessibilityEnabled by remember { mutableStateOf(isAccessibilityServiceEnabled(context)) }
     var isNotificationListenerEnabled by remember { mutableStateOf(isNotificationListenerEnabled(context)) }
     var isContactsPermissionGranted by remember {
         mutableStateOf(
@@ -131,9 +129,6 @@ fun PermissionsScreen(navController: NavController) {
         mutableStateOf(hasUsageStatsPermission(context))
     }
 
-    var showAccessibilityDisclosure by remember { mutableStateOf(false) }
-
-    // Permission launchers
     val contactsPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -146,12 +141,10 @@ fun PermissionsScreen(navController: NavController) {
         isPhoneStatePermissionGranted = isGranted
     }
 
-    // A simple way to refresh when the activity resumes
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                isAccessibilityEnabled = isAccessibilityServiceEnabled(context)
                 isNotificationListenerEnabled = isNotificationListenerEnabled(context)
                 isContactsPermissionGranted = ContextCompat.checkSelfPermission(
                     context, Manifest.permission.READ_CONTACTS
@@ -169,20 +162,6 @@ fun PermissionsScreen(navController: NavController) {
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
-    }
-
-    if (showAccessibilityDisclosure) {
-        AccessibilityProminentDisclosureDialog(
-            onDismissRequest = {
-                sharedPref.edit().putBoolean("accessibility_consent_granted", false).apply()
-                showAccessibilityDisclosure = false
-            },
-            onConfirm = {
-                sharedPref.edit().putBoolean("accessibility_consent_granted", true).apply()
-                showAccessibilityDisclosure = false
-                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            }
-        )
     }
 
     Scaffold(
@@ -223,23 +202,8 @@ fun PermissionsScreen(navController: NavController) {
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     PermissionRow(
-                        title = "Accessibility Access",
-                        description = "Required to read messages from WhatsApp & SMS for scams.",
-                        isGranted = isAccessibilityEnabled,
-                        onToggle = {
-                            if (!isAccessibilityEnabled) {
-                                showAccessibilityDisclosure = true
-                            } else {
-                                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                            }
-                        }
-                    )
-                    
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                    PermissionRow(
                         title = "Notification Access",
-                        description = "Required to scan background messages and VoIP calls for scams.",
+                        description = "Required to scan incoming SMS, WhatsApp, and Telegram messages for scams.",
                         isGranted = isNotificationListenerEnabled,
                         onToggle = {
                             context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
@@ -604,7 +568,6 @@ fun HomeScreen(navController: NavController) {
     val messages by db.messageDao().getAllMessages().collectAsStateWithLifecycle(initialValue = emptyList())
     val pm = remember { context.getSystemService(Context.POWER_SERVICE) as PowerManager }
 
-    var isAccessibilityEnabled by remember { mutableStateOf(isAccessibilityServiceEnabled(context)) }
     var isNotificationListenerEnabled by remember { mutableStateOf(isNotificationListenerEnabled(context)) }
     var isContactsPermissionGranted by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) }
     var isPhoneStatePermissionGranted by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) }
@@ -612,7 +575,7 @@ fun HomeScreen(navController: NavController) {
     var isBatteryOptimized by remember { mutableStateOf(pm.isIgnoringBatteryOptimizations(context.packageName)) }
     var isUsageStatsEnabled by remember { mutableStateOf(hasUsageStatsPermission(context)) }
 
-    val isAllGranted = isAccessibilityEnabled && isNotificationListenerEnabled && isContactsPermissionGranted && isOverlayPermissionGranted && isBatteryOptimized && isPhoneStatePermissionGranted && isUsageStatsEnabled
+    val isAllGranted = isNotificationListenerEnabled && isContactsPermissionGranted && isOverlayPermissionGranted && isBatteryOptimized && isPhoneStatePermissionGranted && isUsageStatsEnabled
 
     var searchQuery by remember { mutableStateOf("") }
     val filteredMessages = remember(searchQuery, messages) {
@@ -636,7 +599,6 @@ fun HomeScreen(navController: NavController) {
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                isAccessibilityEnabled = isAccessibilityServiceEnabled(context)
                 isNotificationListenerEnabled = isNotificationListenerEnabled(context)
                 isContactsPermissionGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
                 isPhoneStatePermissionGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
@@ -1089,35 +1051,6 @@ fun PrivacyScreen(navController: NavController) {
     }
 }
 
-fun isAccessibilityServiceEnabled(context: Context): Boolean {
-    var accessibilityEnabled = 0
-    val service = context.packageName + "/" + MessageReaderAccessibilityService::class.java.canonicalName
-    try {
-        accessibilityEnabled = Settings.Secure.getInt(
-            context.applicationContext.contentResolver,
-            Settings.Secure.ACCESSIBILITY_ENABLED
-        )
-    } catch (e: Settings.SettingNotFoundException) {
-    }
-    val mStringColonSplitter = android.text.TextUtils.SimpleStringSplitter(':')
-    if (accessibilityEnabled == 1) {
-        val settingValue = Settings.Secure.getString(
-            context.applicationContext.contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        )
-        if (settingValue != null) {
-            mStringColonSplitter.setString(settingValue)
-            while (mStringColonSplitter.hasNext()) {
-                val accessibilityService = mStringColonSplitter.next()
-                if (accessibilityService.equals(service, ignoreCase = true)) {
-                    return true
-                }
-            }
-        }
-    }
-    return false
-}
-
 fun isNotificationListenerEnabled(context: Context): Boolean {
     val enabledListeners = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
     val packageName = context.packageName
@@ -1205,105 +1138,7 @@ fun WelcomeScreen(navController: NavController, sharedPref: SharedPreferences) {
     }
 }
 
-@Composable
-fun AccessibilityProminentDisclosureDialog(
-    onDismissRequest: () -> Unit,
-    onConfirm: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismissRequest,
-        properties = DialogProperties(
-            dismissOnBackPress = false,
-            dismissOnClickOutside = false
-        ),
-        icon = {
-            Icon(
-                imageVector = Icons.Default.Security,
-                contentDescription = "Accessibility Disclosure",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(36.dp)
-            )
-        },
-        title = {
-            Text(
-                text = "Accessibility Permission Required for Scam Protection",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Bullet 1: API & Purpose
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .padding(top = 6.dp)
-                            .size(8.dp)
-                            .background(
-                                color = MaterialTheme.colorScheme.primary,
-                                shape = CircleShape
-                            )
-                    )
-                    Text(
-                        text = "This app uses the AccessibilityService API to read incoming message text displayed on your screen inside supported messaging apps to detect social engineering and cyber fraud in real time.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 20.sp
-                    )
-                }
 
-                // Bullet 2: 100% On-Device Privacy
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .padding(top = 6.dp)
-                            .size(8.dp)
-                            .background(
-                                color = MaterialTheme.colorScheme.primary,
-                                shape = CircleShape
-                            )
-                    )
-                    Text(
-                        text = "All AI and NLP analysis happens 100% offline on your device. Your private conversations and screen content are never transmitted to any server or shared with third parties.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 20.sp
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text("Agree & Continue", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismissRequest,
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text("Not Now", color = MaterialTheme.colorScheme.outline)
-            }
-        },
-        shape = RoundedCornerShape(24.dp),
-        containerColor = MaterialTheme.colorScheme.surface
-    )
-}
 
 
 

@@ -62,19 +62,6 @@
                 android:value="Monitors incoming messages and notifications to detect scams in real-time, protecting users from fraud without sending any data off-device." />
         </service>
 
-        <service
-            android:name=".MessageReaderAccessibilityService"
-            android:label="EdgeGuard Message Reader"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_service_config" />
-        </service>
-
 
         <receiver
             android:name=".AppPhoneStateReceiver"

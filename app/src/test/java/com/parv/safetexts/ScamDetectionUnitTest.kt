@@ -496,4 +496,69 @@ class ScamDetectionUnitTest {
             assertFalse("Sender should NOT be identified as transactional bank: $sender", ContactUtils.isTransactionalBankSmsSender(sender))
         }
     }
+
+    @Test
+    fun testIgnoredWhatsAppNotifications() {
+        val ongoingCalls = listOf(
+            "Ongoing voice call",
+            "Ongoing video call",
+            "Voice call going on",
+            "Video call going on",
+            "Call in progress",
+            "Tap to return to call"
+        )
+        for (text in ongoingCalls) {
+            assertTrue("Ongoing call should be ignored: $text", ScamDetectionService.isIgnoredWhatsAppNotification("WhatsApp", text))
+        }
+        assertTrue("Ongoing flag should be ignored", ScamDetectionService.isIgnoredWhatsAppNotification("Unknown", "Call", isOngoing = true))
+
+        val missedCalls = listOf(
+            "Missed voice call",
+            "Missed video call",
+            "Missed call",
+            "Missed group call",
+            "Call missed"
+        )
+        for (text in missedCalls) {
+            assertTrue("Missed call should be ignored: $text", ScamDetectionService.isIgnoredWhatsAppNotification("John Doe", text))
+        }
+        assertTrue("Missed call category should be ignored", ScamDetectionService.isIgnoredWhatsAppNotification("John Doe", "Hello", category = android.app.Notification.CATEGORY_MISSED_CALL))
+
+        val backgroundSync = listOf(
+            "Checking for new messages",
+            "Searching for new messages",
+            "Waiting for this message",
+            "Backup in progress",
+            "Backing up messages",
+            "Restoring chat history",
+            "WhatsApp Web is currently active"
+        )
+        for (text in backgroundSync) {
+            assertTrue("Sync notification should be ignored: $text", ScamDetectionService.isIgnoredWhatsAppNotification("WhatsApp", text))
+        }
+
+        val reactionsAndLikes = listOf(
+            "reacted to \"Hello\"",
+            "reacted with 😂 to your message",
+            "liked your status",
+            "liked your message",
+            "liked a message",
+            "xyz reacted to your photo",
+            "संदेश पर प्रतिक्रिया दी",
+            "स्थिति पसंद की"
+        )
+        for (text in reactionsAndLikes) {
+            assertTrue("Reaction or like should be ignored: $text", ScamDetectionService.isIgnoredWhatsAppNotification("Alice", text))
+        }
+
+        val validMessages = listOf(
+            "Hey, can you transfer 500 rupees to my UPI id?",
+            "Your parcel is held at customs. Click http://scam-delivery.com to pay fine.",
+            "Are you coming to the office today?",
+            "Please check the report attached."
+        )
+        for (text in validMessages) {
+            assertFalse("Real chat message must NOT be ignored: $text", ScamDetectionService.isIgnoredWhatsAppNotification("Alice", text))
+        }
+    }
 }

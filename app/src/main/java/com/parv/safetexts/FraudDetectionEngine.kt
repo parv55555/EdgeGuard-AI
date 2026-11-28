@@ -907,7 +907,6 @@ object FraudDetectionEngine {
             return directParsed
         }
 
-        // Multi-word accessibility string or message token split
         val tokens = trimmed.split(TOKEN_SPLIT_REGEX)
         for (token in tokens) {
             val cleanToken = token.trim().trim('\'', '"', '(', ')', '<', '>', '/', '.', ',', ';', ':', '!', '?')

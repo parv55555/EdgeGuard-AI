@@ -652,7 +652,6 @@ object AlertCardBuilder {
             setPadding(dp(context, 12), dp(context, 8), dp(context, 12), dp(context, 8))
             layoutParams = LinearLayout.LayoutParams(0, dp(context, 40), 1f)
             setOnClickListener {
-                MessageReaderAccessibilityService.allowNextInstallUntilTime = System.currentTimeMillis() + 60_000L
                 onDismiss()
             }
         }
