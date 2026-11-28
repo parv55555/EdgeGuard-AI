@@ -54,6 +54,8 @@ sealed interface LinkShieldUiState {
 
 class LinkInterceptorActivity : ComponentActivity() {
 
+    private var uiState by mutableStateOf<LinkShieldUiState>(LinkShieldUiState.Scanning(""))
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -66,14 +68,23 @@ class LinkInterceptorActivity : ComponentActivity() {
             return
         }
 
-        if (LinkShieldAllowlist.isAllowlisted(rawUrl)) {
-            SafeBrowserLauncher.openInRealBrowser(applicationContext, rawUrl)
-            finish()
-            return
+        setupContent(rawUrl)
+        handleUrl(rawUrl)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val rawUrl = intent.dataString
+            ?: intent.data?.toString()
+            ?: intent.getStringExtra(Intent.EXTRA_TEXT)
+        if (!rawUrl.isNullOrBlank()) {
+            setupContent(rawUrl)
+            handleUrl(rawUrl)
         }
+    }
 
-        var uiState by mutableStateOf<LinkShieldUiState>(LinkShieldUiState.Scanning(rawUrl))
-
+    private fun setupContent(rawUrl: String) {
         setContent {
             EdgeGuardAITheme {
                 Box(
@@ -84,7 +95,7 @@ class LinkInterceptorActivity : ComponentActivity() {
                 ) {
                     when (val state = uiState) {
                         is LinkShieldUiState.Scanning -> {
-                            ScanningCard(url = state.url)
+                            ScanningCard(url = state.url.ifBlank { rawUrl })
                         }
                         is LinkShieldUiState.Warning -> {
                             WarningCard(
@@ -100,6 +111,16 @@ class LinkInterceptorActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun handleUrl(rawUrl: String) {
+        if (LinkShieldAllowlist.isAllowlisted(rawUrl)) {
+            SafeBrowserLauncher.openInRealBrowser(applicationContext, rawUrl)
+            finish()
+            return
+        }
+
+        uiState = LinkShieldUiState.Scanning(rawUrl)
 
         lifecycleScope.launch {
             val scanResult = withContext(Dispatchers.IO) {
